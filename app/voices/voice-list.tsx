@@ -87,7 +87,7 @@ export function VoiceList({ voices }: { voices: Voice[] }) {
                     variant="destructive"
                     disabled={pending}
                     onClick={() => {
-                      if (confirm(`刪除「${voice.name}」？錄音會一起刪掉。`))
+                      if (confirm(`刪除「${voice.name}」？`))
                         run(() => deleteVoiceAction(voice.id))
                     }}
                   >

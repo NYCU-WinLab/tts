@@ -74,7 +74,7 @@ export function NewKey({ base }: { base: string }) {
       >
         <DialogContent size="wide">
           <DialogHeader>
-            <DialogTitle>金鑰只顯示這一次</DialogTitle>
+            <DialogTitle>新金鑰</DialogTitle>
           </DialogHeader>
           <pre className="overflow-x-auto rounded-control bg-muted p-4 font-mono">
             {made}
@@ -122,8 +122,7 @@ export function KeyList({ keys }: { keys: Key[] }) {
                 variant="destructive"
                 disabled={pending}
                 onClick={() => {
-                  if (!confirm(`撤銷「${key.name}」？用它的程式會立刻失效。`))
-                    return
+                  if (!confirm(`撤銷「${key.name}」？`)) return
                   start(async () => {
                     const result = await revokeApiKeyAction(key.id)
                     if (!result.ok) toast.error(result.error)
