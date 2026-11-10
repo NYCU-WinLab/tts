@@ -14,7 +14,8 @@ export type JobKind = "speech" | "consent" | "voice"
 
 /** A job the worker has not reported on in this long went with a crash. */
 const RUNNING_TIMEOUT_MS = 5 * 60 * 1000
-/** Speech results, and their links, are kept this long. */
+/** The secret link to a speech result works this long; the member's own
+ * history keeps the audio until they delete it. */
 export const RESULT_TTL_MS = 24 * 60 * 60 * 1000
 /** The worker counts as online while it polled this recently. */
 const ONLINE_MS = 60 * 1000
@@ -400,15 +401,21 @@ export async function speechAudioById(id: string) {
     : null
 }
 
-/** Drops results past their time, so the table holds only a day of audio. */
-export async function sweepResults() {
-  await db
-    .update(job)
-    .set({ result: null })
+/** A finished speech job's audio, for the member who made it: their
+ * history keeps every result until they delete it. */
+export async function ownSpeechAudio(userId: string, id: string) {
+  const [row] = await db
+    .select({ audio: job.result, mime: job.resultMime })
+    .from(job)
     .where(
       and(
-        sql`${job.result} is not null`,
-        lt(job.finishedAt, new Date(Date.now() - RESULT_TTL_MS))
+        eq(job.id, id),
+        eq(job.userId, userId),
+        eq(job.kind, "speech"),
+        eq(job.status, "done")
       )
     )
+  return row?.audio
+    ? { audio: row.audio, mime: row.mime ?? "audio/mpeg" }
+    : null
 }

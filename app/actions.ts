@@ -2,7 +2,7 @@
 
 import { errorMessage, runAction } from "@/lib/actions/define"
 import { createApiKey, revokeApiKey } from "@/lib/actions/keys"
-import { speak } from "@/lib/actions/speech"
+import { deleteSpeech, speak } from "@/lib/actions/speech"
 import {
   createVoice,
   createVoiceConsent,
@@ -26,6 +26,11 @@ async function attempt<T>(fn: () => Promise<T>) {
 export async function speakAction(input: string, voice: string) {
   const actor = await requireActor("/")
   return attempt(() => runAction(speak, actor, { input, voice, format: "mp3" }))
+}
+
+export async function deleteSpeechAction(id: string) {
+  const actor = await requireActor("/")
+  return attempt(() => runAction(deleteSpeech, actor, { id }))
 }
 
 /** Both recordings from the browser recorder: the consent sentence, then the

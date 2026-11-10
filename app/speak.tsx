@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import * as React from "react"
 import { toast } from "sonner"
 
@@ -28,8 +29,8 @@ export function Speak({
 }) {
   const [voice, setVoice] = React.useState(voices[0]?.value ?? "")
   const [text, setText] = React.useState("")
-  const [audio, setAudio] = React.useState<{ url: string; seconds: number }>()
   const [pending, start] = React.useTransition()
+  const router = useRouter()
 
   if (!voices.length) return <EmptyState noun="可用的聲音" />
 
@@ -38,7 +39,8 @@ export function Speak({
     start(async () => {
       const result = await speakAction(text, voice)
       if (!result.ok) return void toast.error(result.error)
-      setAudio({ url: result.url, seconds: result.seconds ?? 0 })
+      // The history below picks it up and plays it.
+      router.refresh()
     })
   }
 
@@ -81,15 +83,6 @@ export function Speak({
           {pending ? "產生中…" : "產生"}
         </Button>
       </div>
-      {audio && (
-        <audio
-          key={audio.url}
-          src={audio.url}
-          controls
-          autoPlay
-          className="w-full"
-        />
-      )}
     </form>
   )
 }

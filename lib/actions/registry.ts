@@ -1,6 +1,11 @@
 import type { Action } from "@/lib/actions/define"
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/actions/keys"
-import { myUsage, speak } from "@/lib/actions/speech"
+import {
+  deleteSpeech,
+  listSpeeches,
+  myUsage,
+  speak,
+} from "@/lib/actions/speech"
 import { whoami } from "@/lib/actions/users"
 import {
   createVoice,
@@ -16,6 +21,8 @@ export const actions: Action[] = [
   whoami,
   listVoices,
   speak,
+  listSpeeches,
+  deleteSpeech,
   shareVoice,
   deleteVoice,
   listVoiceConsents,

@@ -71,7 +71,7 @@ A `name` is ignored: the voice takes your name. `shared=true` lets every member 
 
 ## MCP
 
-`https://tts.winlab.tw/mcp`, with OAuth sign-in through the lab account. Tools: `whoami`, `list_voices`, `speak` (returns a link that works for 24 hours), `share_voice`, `delete_voice`, `list_voice_consents`, `my_usage`, `list_api_keys`, `revoke_api_key`.
+`https://tts.winlab.tw/mcp`, with OAuth sign-in through the lab account. Tools: `whoami`, `list_voices`, `speak` (returns a link that works for 24 hours), `list_speeches`, `delete_speech`, `share_voice`, `delete_voice`, `list_voice_consents`, `my_usage`, `list_api_keys`, `revoke_api_key`.
 
 ## How it works
 

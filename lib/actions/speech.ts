@@ -66,6 +66,7 @@ export const speak = defineAction({
         params: {
           input: input.input,
           voiceId: found.id,
+          voiceName: found.name,
           format: input.format,
           speed: input.speed,
         },
@@ -118,5 +119,69 @@ export const myUsage = defineAction({
       .groupBy(job.via)
       .orderBy(desc(sql`count(*)`))
     return { since: since.toISOString(), byVia: rows }
+  },
+})
+
+export const listSpeeches = defineAction({
+  name: "list_speeches",
+  title: "產生紀錄",
+  description:
+    "The signed-in member's speech history, newest first: what each one says, the voice, when, its length in seconds, and a link to its audio that works while signed in to tts.winlab.tw. Kept until the member deletes it.",
+  kind: "query",
+  input: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
+  run: async (actor, input) => {
+    const rows = await db
+      .select({
+        id: job.id,
+        params: job.params,
+        seconds: job.seconds,
+        createdAt: job.createdAt,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.userId, actor.userId),
+          eq(job.kind, "speech"),
+          eq(job.status, "done"),
+          sql`${job.result} is not null`
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(input.limit)
+    const base = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
+    return {
+      speeches: rows.map((row) => ({
+        id: row.id,
+        input: String(row.params.input ?? ""),
+        voice: String(row.params.voiceName ?? ""),
+        seconds: row.seconds,
+        createdAt: row.createdAt,
+        url: new URL(`/speeches/${row.id}`, base).toString(),
+      })),
+    }
+  },
+})
+
+export const deleteSpeech = defineAction({
+  name: "delete_speech",
+  title: "刪除紀錄",
+  description:
+    "Deletes one of the signed-in member's speeches from their history: its text and its audio, for good. Its 24-hour link stops working too.",
+  kind: "mutation",
+  input: z.object({ id: z.string().uuid() }),
+  run: async (actor, input) => {
+    const deleted = await db
+      .delete(job)
+      .where(
+        and(
+          eq(job.id, input.id),
+          eq(job.userId, actor.userId),
+          eq(job.kind, "speech"),
+          sql`${job.status} in ('done','failed')`
+        )
+      )
+      .returning({ id: job.id })
+    if (!deleted.length) throw new Error("找不到這筆紀錄")
+    return { id: input.id }
   },
 })
