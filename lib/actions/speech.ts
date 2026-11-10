@@ -6,7 +6,6 @@ import { z } from "zod"
 import { defineAction } from "@/lib/actions/define"
 import {
   enqueue,
-  pendingJobs,
   RESULT_TTL_MS,
   waitFor,
   workerOnline,
@@ -59,22 +58,24 @@ export const speak = defineAction({
     const found = await resolveVoice(actor, input.voice)
     if (!found) throw new Error(`找不到聲音「${input.voice}」`)
     if (!workerOnline()) throw new Error("語音主機離線，請稍後再試")
-    if ((await pendingJobs(actor.userId)) >= MAX_PENDING)
-      throw new Error("你已經有好幾段在排隊，請等它們完成")
     const linkSecret = randomBytes(16).toString("base64url")
-    const id = await enqueue({
-      kind: "speech",
-      userId: actor.userId,
-      params: {
-        input: input.input,
-        voiceId: found.id,
-        format: input.format,
-        speed: input.speed,
+    const id = await enqueue(
+      {
+        kind: "speech",
+        userId: actor.userId,
+        params: {
+          input: input.input,
+          voiceId: found.id,
+          format: input.format,
+          speed: input.speed,
+        },
+        chars: [...input.input].length,
+        via: actor.via,
+        linkSecret,
       },
-      chars: [...input.input].length,
-      via: actor.via,
-      linkSecret,
-    })
+      MAX_PENDING
+    )
+    if (!id) throw new Error("你已經有好幾段在排隊，請等它們完成")
     const done = await waitFor(id, SPEECH_TIMEOUT_MS)
     if (done.status === "failed")
       throw new Error(`語音產生失敗：${done.error ?? "原因不明"}`)

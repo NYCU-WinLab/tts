@@ -6,7 +6,7 @@ import { z } from "zod"
 import { type Actor, defineAction } from "@/lib/actions/define"
 import { enqueue, waitFor, workerOnline } from "@/lib/actions/jobs"
 import { db } from "@/lib/db"
-import { user, voice, voiceConsent } from "@/lib/db/schema"
+import { job, user, voice, voiceConsent } from "@/lib/db/schema"
 
 // Voices: a member's own, made from a consent recording and a sample of the
 // same speaker, and built-in ones an admin adds with a note of how the
@@ -23,6 +23,7 @@ const MAX_VOICES = 5
 const MAX_CONSENTS = 20
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024
 const CHECK_TIMEOUT_MS = 120_000
+const MAX_PENDING = 3
 
 /** The audio types the OpenAI API takes, plus what browsers record. */
 const AUDIO_TYPES = [
@@ -72,6 +73,13 @@ export async function isAdmin(actor: Actor) {
     .map((name) => name.trim())
     .filter(Boolean)
   return !!username && admins.includes(username)
+}
+
+/** Queues a check; a member waits on at most a few jobs at a time. */
+async function queueCheck(values: Parameters<typeof enqueue>[0]) {
+  const jobId = await enqueue(values, MAX_PENDING)
+  if (!jobId) throw new Error("你已經有好幾件在排隊，請等它們完成")
+  return jobId
 }
 
 function requireWorker() {
@@ -165,6 +173,16 @@ export const deleteVoice = defineAction({
       )
       .returning({ id: voice.id })
     if (!deleted.length) throw new Error("找不到你的這個聲音")
+    // Speech still queued in this voice would find no sample: end it now.
+    await db
+      .update(job)
+      .set({ status: "failed", error: "voice deleted", finishedAt: new Date() })
+      .where(
+        and(
+          eq(job.status, "queued"),
+          sql`${job.params}->>'voiceId' = ${input.id}`
+        )
+      )
     return { id: input.id }
   },
 })
@@ -222,7 +240,7 @@ export const createVoiceConsent = defineAction({
       recording: input.recording,
       mime: input.mime,
     })
-    const jobId = await enqueue({
+    const jobId = await queueCheck({
       kind: "consent",
       userId: actor.userId,
       params: {
@@ -289,7 +307,7 @@ export const createVoice = defineAction({
       })
       // No consent to compare: the worker only checks the length and keeps
       // the speaker embedding, so members cannot copy this voice.
-      const jobId = await enqueue({
+      const jobId = await queueCheck({
         kind: "voice",
         userId: actor.userId,
         params: { voiceId: id },
@@ -331,7 +349,7 @@ export const createVoice = defineAction({
       sample: input.sample,
       mime: input.mime,
     })
-    const jobId = await enqueue({
+    const jobId = await queueCheck({
       kind: "voice",
       userId: actor.userId,
       params: { voiceId: id, consentId: input.consent },

@@ -16,12 +16,13 @@ import difflib, json, os, re, socket, subprocess, tempfile, time, traceback, url
 URL = os.environ["TTS_URL"].rstrip("/")
 TOKEN = os.environ["WORKER_TOKEN"]
 MODEL_DIR = os.environ.get("MODEL_DIR", "/models/IndexTTS-2")
+# Model downloads (Whisper, ECAPA) only; recordings never touch it.
 CACHE = os.environ.get("CACHE_DIR", "/cache")
 NAME = os.environ.get("WORKER_NAME", socket.gethostname())
 # A reference longer than this only slows IndexTTS down; the start is kept.
 REF_MAX_S = float(os.environ.get("REF_MAX_S", "20"))
 SAMPLE_MAX_S = 60
-CONSENT_MIN_SCORE = float(os.environ.get("CONSENT_MIN_SCORE", "0.75"))
+CONSENT_MIN_SCORE = float(os.environ.get("CONSENT_MIN_SCORE", "0.85"))
 SAME_SPEAKER_MIN = float(os.environ.get("SAME_SPEAKER_MIN", "0.5"))
 
 ENCODE = {
@@ -65,21 +66,17 @@ def duration(path):
     return float(p.stdout.strip() or 0)
 
 
-def fetch_wav(kind, ident, rate, max_s=None):
-    """A recording from the web app as mono WAV at rate, cached by kind and id: samples and
-    consent recordings never change once made."""
-    path = os.path.join(CACHE, kind, f"{ident}.{rate}.wav")
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        _, _, data = request("GET", f"/api/worker/audio/{kind}/{ident}")
-        with tempfile.NamedTemporaryFile(dir=os.path.dirname(path), delete=False) as src:
-            src.write(data)
-        try:
-            ffmpeg(["-i", src.name, *(["-t", str(max_s)] if max_s else []), "-ac", "1",
-                    "-ar", str(rate), "-c:a", "pcm_s16le", path + ".tmp.wav"])
-            os.replace(path + ".tmp.wav", path)
-        finally:
-            os.remove(src.name)
+def fetch_wav(kind, ident, rate, tmp, max_s=None):
+    """A recording from the web app as mono WAV at rate, in the job's temp folder tmp.
+    Nothing is kept after the job: a deleted voice leaves no copy on this box."""
+    _, _, data = request("GET", f"/api/worker/audio/{kind}/{ident}")
+    src = os.path.join(tmp, f"{kind}.src")
+    path = os.path.join(tmp, f"{kind}.{rate}.wav")
+    with open(src, "wb") as f:
+        f.write(data)
+    ffmpeg(["-i", src, *(["-t", str(max_s)] if max_s else []), "-ac", "1",
+            "-ar", str(rate), "-c:a", "pcm_s16le", path])
+    os.remove(src)
     return path
 
 
@@ -100,8 +97,8 @@ def load_tts():
 
 def speech(job):
     p = job["params"]
-    ref = fetch_wav("voice", p["voiceId"], 24000, REF_MAX_S)
     with tempfile.TemporaryDirectory() as tmp:
+        ref = fetch_wav("voice", p["voiceId"], 24000, tmp, REF_MAX_S)
         raw = os.path.join(tmp, "raw.wav")
         t = time.time()
         load_tts().infer(spk_audio_prompt=ref, text=p["input"], output_path=raw, verbose=False)
@@ -131,10 +128,30 @@ def normalize(text, language):
     return re.sub(r"[^a-z ]", "", text.lower()).split()
 
 
+# Words that turn the sentence around ("I do not consent"); one heard but not in the
+# sentence rejects the recording however close the rest is.
+NEGATIONS = {"zh": set("不沒未別拒否"),
+             "en": {"not", "no", "never", "dont", "doesnt", "didnt", "wont", "cannot",
+                    "cant", "refuse", "withdraw", "nor"}}
+
+
+def negated(sentence, heard, language):
+    if language == "zh":
+        return any(ch in heard and ch not in sentence for ch in NEGATIONS["zh"])
+    said = set(re.sub(r"[^a-z ]", "", heard.lower().replace("'", "").replace("’", "")).split())
+    want = set(re.sub(r"[^a-z ]", "", sentence.lower()).split())
+    return bool((said - want) & NEGATIONS["en"])
+
+
 def consent(job):
+    with tempfile.TemporaryDirectory() as tmp:
+        check_consent(job, tmp)
+
+
+def check_consent(job, tmp):
     global whisper
     p = job["params"]
-    path = fetch_wav("consent", p["consentId"], 16000)
+    path = fetch_wav("consent", p["consentId"], 16000, tmp)
     if duration(path) > 30:
         return report(job["id"], {"kind": "consent", "ok": False, "transcript": "", "score": 0,
                                   "reason": "同意錄音超過 30 秒"})
@@ -147,9 +164,11 @@ def consent(job):
     heard = "".join(s.text for s in segments).strip()
     want, got = normalize(p["sentence"], p["language"]), normalize(heard, p["language"])
     score = difflib.SequenceMatcher(None, want, got).ratio() if want else 0
-    ok = score >= CONSENT_MIN_SCORE
+    refused = negated(p["sentence"], heard, p["language"])
+    ok = score >= CONSENT_MIN_SCORE and not refused
+    reason = "錄音裡有否定的話" if refused else "沒有完整念出同意句子"
     report(job["id"], {"kind": "consent", "ok": ok, "transcript": heard, "score": round(score, 3),
-                       **({} if ok else {"reason": "沒有完整念出同意句子"})})
+                       **({} if ok else {"reason": reason})})
     log(f"consent {p['consentId']} score {score:.2f} ok={ok}")
 
 
@@ -167,9 +186,14 @@ def embedding(path):
 
 
 def voice(job):
+    with tempfile.TemporaryDirectory() as tmp:
+        check_voice(job, tmp)
+
+
+def check_voice(job, tmp):
     import torch
     p = job["params"]
-    sample = fetch_wav("voice", p["voiceId"], 16000)
+    sample = fetch_wav("voice", p["voiceId"], 16000, tmp)
     seconds = duration(sample)
     reason = ("聲音樣本超過 60 秒" if seconds > SAMPLE_MAX_S else
               "聲音樣本短於 3 秒" if seconds < 3 else None)
@@ -178,7 +202,7 @@ def voice(job):
     mine = embedding(sample)
     # A built-in voice has no consent recording: only its embedding is kept.
     same = 1.0 if not p.get("consentId") else float(torch.nn.functional.cosine_similarity(
-        mine, embedding(fetch_wav("consent", p["consentId"], 16000)), dim=0))
+        mine, embedding(fetch_wav("consent", p["consentId"], 16000, tmp)), dim=0))
     ok = same >= SAME_SPEAKER_MIN
     report(job["id"], {"kind": "voice", "ok": ok, "similarity": round(same, 3),
                        "embedding": [round(float(x), 5) for x in mine.cpu()],

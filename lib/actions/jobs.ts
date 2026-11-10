@@ -35,27 +35,39 @@ export function isWorker(authorization: string | null) {
   return timingSafeEqual(a, b)
 }
 
-export async function enqueue(values: {
-  kind: JobKind
-  userId: string
-  params: Record<string, unknown>
-  chars?: number
-  via: string
-  linkSecret?: string
-}) {
-  const [row] = await db.insert(job).values(values).returning({ id: job.id })
-  return row.id
-}
-
-/** Jobs a member has waiting or running, to cap how much one can queue. */
-export async function pendingJobs(userId: string) {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(job)
-    .where(
-      and(eq(job.userId, userId), sql`${job.status} in ('queued','running')`)
-    )
-  return row.n
+/** Queues a job. With maxPending, refuses (returns null) when the member
+ * already has that many waiting or running; a per-member lock makes the
+ * count and the insert one step, so parallel requests cannot pass it. */
+export async function enqueue(
+  values: {
+    kind: JobKind
+    userId: string
+    params: Record<string, unknown>
+    chars?: number
+    via: string
+    linkSecret?: string
+  },
+  maxPending?: number
+) {
+  return db.transaction(async (tx) => {
+    if (maxPending !== undefined) {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${values.userId}))`
+      )
+      const [row] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(job)
+        .where(
+          and(
+            eq(job.userId, values.userId),
+            sql`${job.status} in ('queued','running')`
+          )
+        )
+      if (row.n >= maxPending) return null
+    }
+    const [row] = await tx.insert(job).values(values).returning({ id: job.id })
+    return row.id
+  })
 }
 
 /** Waits until the worker finishes the job or the time runs out. */
@@ -74,11 +86,25 @@ export async function waitFor(id: string, timeoutMs: number) {
     if (!row) throw new Error("工作不見了")
     if (row.status === "done" || row.status === "failed") return row
     if (Date.now() > until) {
-      // Nobody waits for it any more: drop it if the worker has not started.
-      await db
+      // Nobody waits for it any more: drop it if the worker has not started,
+      // and reject the consent or voice it was checking.
+      const dropped = await db
         .update(job)
         .set({ status: "failed", error: "timeout", finishedAt: new Date() })
         .where(and(eq(job.id, id), eq(job.status, "queued")))
+        .returning({ kind: job.kind, params: job.params })
+      for (const { kind, params } of dropped) {
+        if (kind === "consent")
+          await db
+            .update(voiceConsent)
+            .set({ status: "rejected", reason: "檢查逾時" })
+            .where(eq(voiceConsent.id, String(params.consentId)))
+        if (kind === "voice")
+          await db
+            .update(voice)
+            .set({ status: "rejected", reason: "檢查逾時" })
+            .where(eq(voice.id, String(params.voiceId)))
+      }
       throw new Error("語音產生逾時，請稍後再試")
     }
     await new Promise((resolve) => setTimeout(resolve, delay))
@@ -208,7 +234,9 @@ export async function finishJob(id: string, report: JobReport) {
         .set({
           status: report.ok && !copied ? "ready" : "rejected",
           similarity: report.similarity,
-          embedding: report.embedding ?? null,
+          // Only a ready voice keeps its embedding: a rejected sample
+          // must not block someone else's voice.
+          embedding: report.ok && !copied ? (report.embedding ?? null) : null,
           reason: copied
             ? `和「${copied}」的聲音太像`
             : report.ok
@@ -250,6 +278,7 @@ async function copiedVoice(voiceId: string, embedding: number[]) {
     .where(
       and(
         sql`${voice.embedding} is not null`,
+        eq(voice.status, "ready"),
         sql`${voice.id} <> ${voiceId}`,
         or(ne(voice.userId, self.userId), eq(voice.builtin, true))
       )
