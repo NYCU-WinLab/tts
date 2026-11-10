@@ -78,8 +78,15 @@ export async function isAdmin(actor: Actor) {
 /** Queues a check; a member waits on at most a few jobs at a time. */
 async function queueCheck(values: Parameters<typeof enqueue>[0]) {
   const jobId = await enqueue(values, MAX_PENDING)
-  if (!jobId) throw new Error("你已經有好幾件在排隊，請等它們完成")
-  return jobId
+  if (jobId) return jobId
+  // Refused: drop the consent or voice just added for this check.
+  if (typeof values.params.consentId === "string" && values.kind === "consent")
+    await db
+      .delete(voiceConsent)
+      .where(eq(voiceConsent.id, values.params.consentId))
+  if (typeof values.params.voiceId === "string")
+    await db.delete(voice).where(eq(voice.id, values.params.voiceId))
+  throw new Error("你已經有好幾件在排隊，請等它們完成")
 }
 
 function requireWorker() {

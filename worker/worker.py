@@ -130,7 +130,7 @@ def normalize(text, language):
 
 # Words that turn the sentence around ("I do not consent"); one heard but not in the
 # sentence rejects the recording however close the rest is.
-NEGATIONS = {"zh": set("不沒未別拒否"),
+NEGATIONS = {"zh": set("不沒没未別别拒否反"),
              "en": {"not", "no", "never", "dont", "doesnt", "didnt", "wont", "cannot",
                     "cant", "refuse", "withdraw", "nor"}}
 
