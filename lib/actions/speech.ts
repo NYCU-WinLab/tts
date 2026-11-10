@@ -66,7 +66,7 @@ export const speak = defineAction({
         params: {
           input: input.input,
           voiceId: found.id,
-        voiceName: found.name,
+          voiceName: found.name,
           format: input.format,
           speed: input.speed,
         },
