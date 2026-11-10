@@ -19,10 +19,17 @@ export const RESULT_TTL_MS = 24 * 60 * 60 * 1000
 /** The worker counts as online while it polled this recently. */
 const ONLINE_MS = 60 * 1000
 
-let workerSeenAt = 0
+// Next bundles this module into each route and page separately, so a plain
+// module variable would hold one copy per bundle: the worker routes would
+// see the worker while pages call it offline. One value per process instead.
+const seen = globalThis as unknown as { ttsWorkerSeenAt?: number }
+
+function markWorkerSeen() {
+  seen.ttsWorkerSeenAt = Date.now()
+}
 
 export function workerOnline() {
-  return Date.now() - workerSeenAt < ONLINE_MS
+  return Date.now() - (seen.ttsWorkerSeenAt ?? 0) < ONLINE_MS
 }
 
 /** Checks the worker's bearer token in constant time. */
@@ -113,7 +120,7 @@ export async function waitFor(id: string, timeoutMs: number) {
 
 /** Gives the oldest queued job to the worker, or null after waitMs. */
 export async function claimNext(worker: string, waitMs: number) {
-  workerSeenAt = Date.now()
+  markWorkerSeen()
   // A job left running by a worker that died goes back in the queue once.
   await db
     .update(job)
@@ -142,7 +149,7 @@ export async function claimNext(worker: string, waitMs: number) {
       return row
     }
     if (Date.now() > until) return null
-    workerSeenAt = Date.now()
+    markWorkerSeen()
     await new Promise((resolve) => setTimeout(resolve, 300))
     void worker
   }
