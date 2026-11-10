@@ -11,13 +11,13 @@ Text to speech with cloned voices at tts.winlab.tw: a Next.js app with its own P
 - **An action stays off MCP only with a reason** in `mcpExcludedBecause`, e.g. `create_api_key`, which mints a credential.
 - **Action fields**: `name` snake_case (the tool name), `title` in Chinese (what members call it), `description` in English for agents, `kind` query or mutation.
 - **Permissions live in the action's `run`**, checked against `actor.userId`; a page, an API key and an MCP call get the same answer.
-- **The /v1 API follows OpenAI** (`/v1/audio/speech`, `/v1/audio/voice_consents`, `/v1/audio/voices`): same paths, fields and error shape, so OpenAI SDKs work with `base_url` changed. Extensions (built-in voices, `GET` lists) add fields; they never rename OpenAI's.
+- **The /v1 API follows OpenAI** (`/v1/audio/speech`, `/v1/audio/voice_consents`, `/v1/audio/voices`): same paths, fields and error shape, so OpenAI SDKs work with `base_url` changed. Extensions (voices called by lab account name, `GET` lists) add fields; they never rename OpenAI's.
 - **The worker only calls out.** It sits behind NAT, long-polls `/api/worker/next` with `WORKER_TOKEN`, fetches recordings from `/api/worker/audio/...` and posts results to `/api/worker/jobs/<id>`. The queue is the `jobs` table (`lib/actions/jobs.ts`); callers wait on the row.
-- **Consent before cloning.** A member's voice needs a verified consent recording (the fixed sentence in `CONSENT_SENTENCES`, checked by Whisper) and a sample of the same speaker (checked by ECAPA). Built-in voices need an admin (`TTS_ADMINS`) and a consent note saying how the speaker agreed.
+- **Consent before cloning.** A member's voice needs a verified consent recording (the fixed sentence in `CONSENT_SENTENCES`, checked by Whisper) and a sample of the same speaker (checked by ECAPA). Each member has one voice, named after them. An admin (`TTS_ADMINS`) may add a member's voice with a consent note saying how the speaker agreed (`owner` in `create_voice`); it belongs to that member.
 - **Schema**: edit `lib/db/*.ts`, run `bun run db:generate`, commit the SQL in `drizzle/`. Tables are snake_case plurals; the Better Auth tables keep its model names as export keys.
 - **Members only.** Every page calls `requireActor`. The open routes are sign-in, `/v1` (API key), `/api/worker` (worker token), `/mcp` (OAuth) and `/a/<job>/<secret>.<ext>`, the 24-hour audio link `speak` returns.
 - **Observability**: actions run in a span (`action <name>`, with `via` web, api or mcp); send ids and counts, never the text or the audio.
 
 ## Verify
 
-`bun run typecheck && bun run lint && bun run format:check && bun run tokens:check && bun run actions:check && bun run build`, on the sandbox, not the MacBook. Then on https://tts.winlab.tw: make a key on /keys, `curl /v1/audio/speech` with voice `cc` and play the file; record a voice on /voices and speak in it.
+`bun run typecheck && bun run lint && bun run format:check && bun run tokens:check && bun run actions:check && bun run build`, on the sandbox, not the MacBook. Then on https://tts.winlab.tw: make a key on /keys, `curl /v1/audio/speech` with voice `cctseng` and play the file; record a voice on /voices and speak in it.

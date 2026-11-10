@@ -5,7 +5,7 @@
 // worker routes and the actions in this folder use these.
 import { createHash, timingSafeEqual } from "node:crypto"
 
-import { and, eq, lt, ne, or, sql } from "drizzle-orm"
+import { and, eq, lt, ne, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { job, voice, voiceConsent } from "@/lib/db/schema"
@@ -244,14 +244,69 @@ export async function finishJob(id: string, report: JobReport) {
               : (report.reason ?? "和同意錄音不是同一人"),
         })
         .where(eq(voice.id, voiceId))
+      if (report.ok && !copied) await keepNewest(tx, voiceId)
     }
   })
   return true
 }
 
-/** A member's new voice that sounds like a voice someone else owns (or a
- * built-in) is refused, even with a consent: the consent could have been
- * spoken by a cloned voice. Built-in voices skip the check. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Each member has one voice: the newest one that passed. When a voice
+ * passes, the owner's older voices go; if a newer one passed first, this one
+ * goes instead. A lock per owner keeps two checks from deleting each other.
+ * Speech still queued in a deleted voice fails at once. */
+async function keepNewest(tx: Tx, voiceId: string) {
+  const [self] = await tx
+    .select({ userId: voice.userId })
+    .from(voice)
+    .where(eq(voice.id, voiceId))
+  if (!self) return
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${"voice:" + self.userId}))`
+  )
+  // Compared in SQL: created_at has microseconds a JS Date would drop.
+  const created = sql`(select created_at from ${voice} where id = ${voiceId})`
+  const [newer] = await tx
+    .select({ id: voice.id })
+    .from(voice)
+    .where(
+      and(
+        eq(voice.userId, self.userId),
+        eq(voice.status, "ready"),
+        ne(voice.id, voiceId),
+        sql`${voice.createdAt} >= ${created}`
+      )
+    )
+    .limit(1)
+  const gone = await tx
+    .delete(voice)
+    .where(
+      newer
+        ? eq(voice.id, voiceId)
+        : and(
+            eq(voice.userId, self.userId),
+            ne(voice.id, voiceId),
+            sql`${voice.createdAt} <= ${created}`
+          )
+    )
+    .returning({ id: voice.id })
+  for (const { id } of gone)
+    await tx
+      .update(job)
+      .set({
+        status: "failed",
+        error: "voice replaced",
+        finishedAt: new Date(),
+      })
+      .where(
+        and(eq(job.status, "queued"), sql`${job.params}->>'voiceId' = ${id}`)
+      )
+}
+
+/** A member's new voice that sounds like a voice someone else owns is
+ * refused, even with a consent: the consent could have been spoken by a
+ * cloned voice. Voices an admin made skip the check. */
 export const COPY_MAX_SIMILARITY = 0.6
 
 const cosine = (a: number[], b: number[]) => {
@@ -280,7 +335,7 @@ async function copiedVoice(voiceId: string, embedding: number[]) {
         sql`${voice.embedding} is not null`,
         eq(voice.status, "ready"),
         sql`${voice.id} <> ${voiceId}`,
-        or(ne(voice.userId, self.userId), eq(voice.builtin, true))
+        ne(voice.userId, self.userId)
       )
     )
   for (const other of others)

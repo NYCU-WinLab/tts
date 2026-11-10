@@ -4,21 +4,23 @@ import { fileField, openaiError, unixTime, withApiKey } from "@/lib/openai/http"
 
 export const runtime = "nodejs"
 
-// POST /v1/audio/voices (multipart: name, audio_sample, consent), as OpenAI.
-// Answers once the worker compared the sample with the consent's speaker.
-// Admins may send builtin=true and consent_note instead of consent.
+// POST /v1/audio/voices (multipart: audio_sample, consent), as OpenAI; a
+// name sent is ignored, the voice takes the member's name and replaces the
+// one they had. shared=true opens it to every member. Answers once the worker
+// compared the sample with the consent's speaker. Admins may send owner (a
+// lab account name) and consent_note instead of consent.
 export async function POST(request: Request) {
   return withApiKey(request, async (actor) => {
     const form = await request.formData().catch(() => null)
     if (!form) return openaiError(400, "Body must be multipart/form-data.")
     const sample = await fileField(form, "audio_sample")
     const made = await runAction(createVoice, actor, {
-      name: form.get("name") ?? "",
       sample: sample.bytes,
       mime: sample.mime,
       consent: form.get("consent") ?? undefined,
-      builtin: form.get("builtin") === "true",
+      owner: form.get("owner") ?? undefined,
       consentNote: form.get("consent_note") ?? undefined,
+      shared: form.get("shared") === "true",
     })
     if (made.status !== "ready")
       return openaiError(
@@ -46,7 +48,7 @@ export async function GET(request: Request) {
         id: voice.id,
         object: "audio.voice",
         name: voice.name,
-        builtin: voice.builtin,
+        username: voice.username,
         shared: voice.shared,
         mine: voice.mine,
         owner: voice.owner,

@@ -14,13 +14,7 @@ export default async function Home() {
   const { voices } = await runAction(listVoices, actor, {})
   const ready = voices
     .filter((voice) => voice.status === "ready")
-    .map((voice) => ({
-      value: voice.builtin ? voice.name : voice.id,
-      label:
-        voice.mine || voice.builtin
-          ? voice.name
-          : `${voice.name}（${voice.owner}）`,
-    }))
+    .map((voice) => ({ value: voice.id, label: voice.owner }))
   return (
     <TtsShell>
       <div className="flex flex-col gap-12">

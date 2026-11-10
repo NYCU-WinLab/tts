@@ -6,11 +6,14 @@ import { z } from "zod"
 import { type Actor, defineAction } from "@/lib/actions/define"
 import { enqueue, waitFor, workerOnline } from "@/lib/actions/jobs"
 import { db } from "@/lib/db"
-import { job, user, voice, voiceConsent } from "@/lib/db/schema"
+import { account, job, user, voice, voiceConsent } from "@/lib/db/schema"
+import { findKeycloakUserByUsername } from "@/lib/keycloak"
 
-// Voices: a member's own, made from a consent recording and a sample of the
-// same speaker, and built-in ones an admin adds with a note of how the
-// speaker agreed. The worker checks both recordings before a voice is used.
+// Voices: each member has one, their own, named after their lab account.
+// A member makes it from a consent recording and a sample of the same
+// speaker, which the worker checks; an admin may instead make one for a
+// member with a note of how the speaker agreed (builtin). The owner decides
+// whether every member may speak in it (shared).
 
 /** What the speaker reads in the consent recording, per language. */
 export const CONSENT_SENTENCES = {
@@ -19,8 +22,9 @@ export const CONSENT_SENTENCES = {
 } as const
 export type ConsentLanguage = keyof typeof CONSENT_SENTENCES
 
-const MAX_VOICES = 5
 const MAX_CONSENTS = 20
+/** A voice gone by the time its check ends: a newer one passed first. */
+const REPLACED = { status: "rejected", reason: "已被同時送出的另一段錄音取代" }
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024
 const CHECK_TIMEOUT_MS = 120_000
 const MAX_PENDING = 3
@@ -65,6 +69,63 @@ async function usernameOf(userId: string) {
   return row?.username ?? null
 }
 
+async function nameOf(userId: string) {
+  const [row] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, userId))
+  return row?.name ?? ""
+}
+
+/** The member with this lab account name. One who never signed in here gets
+ * their user and Keycloak link now, from Keycloak, so their first sign-in
+ * lands on the same user and finds the voice made for them. */
+async function memberByUsername(username: string) {
+  const found = await findKeycloakUserByUsername(username)
+  if (!found?.enabled || !found.email)
+    throw new Error(`找不到成員「${username}」`)
+  // Keycloak's id is what sign-in matches on, so look the member up by it:
+  // their username or email may have changed since they last signed in.
+  const [known] = await db
+    .select({ id: user.id, name: user.name })
+    .from(account)
+    .innerJoin(user, eq(user.id, account.userId))
+    .where(
+      and(eq(account.providerId, "keycloak"), eq(account.accountId, found.id))
+    )
+  if (known) return known
+  const name =
+    found.attributes?.chinese_name?.[0]?.trim() ||
+    [found.firstName, found.lastName].filter(Boolean).join(" ").trim() ||
+    found.username
+  return db.transaction(async (tx) => {
+    const [made] = await tx
+      .insert(user)
+      .values({
+        name,
+        email: found.email!.toLowerCase(),
+        emailVerified: true,
+        username: found.username,
+        updatedAt: new Date(),
+      })
+      .returning({ id: user.id, name: user.name })
+    await tx.insert(account).values({
+      accountId: found.id,
+      providerId: "keycloak",
+      userId: made.id,
+      updatedAt: new Date(),
+    })
+    return made
+  })
+}
+
+/** Rejected tries only hold their recordings: a new try clears them. */
+async function dropRejected(userId: string) {
+  await db
+    .delete(voice)
+    .where(and(eq(voice.userId, userId), eq(voice.status, "rejected")))
+}
+
 export async function isAdmin(actor: Actor) {
   if (!actor.userId) return false
   const username = await usernameOf(actor.userId)
@@ -97,7 +158,7 @@ export const listVoices = defineAction({
   name: "list_voices",
   title: "聲音列表",
   description:
-    "Voices the signed-in member can speak in: built-in ones (call them by name, such as cc), every member's shared voices and the member's own, including ones still being checked (status pending) or rejected (with the reason). Pass a voice's id, or a built-in's name, as voice to speak.",
+    "Voices the signed-in member can speak in: every member's shared voice and the member's own, including one still being checked (status pending) or rejected (with the reason). Each member has one voice, named after them; pass its owner's lab account name (username, such as cctseng) or its id as voice to speak.",
   kind: "query",
   input: z.object({}),
   run: async (actor) => {
@@ -113,19 +174,17 @@ export const listVoices = defineAction({
         createdAt: voice.createdAt,
         ownerId: voice.userId,
         owner: user.name,
+        username: user.username,
       })
       .from(voice)
       .innerJoin(user, eq(user.id, voice.userId))
       .where(
         or(
           eq(voice.userId, actor.userId),
-          and(
-            or(eq(voice.builtin, true), eq(voice.shared, true)),
-            eq(voice.status, "ready")
-          )
+          and(eq(voice.shared, true), eq(voice.status, "ready"))
         )
       )
-      .orderBy(desc(voice.builtin), desc(voice.createdAt))
+      .orderBy(desc(voice.createdAt))
     return {
       voices: rows.map(({ ownerId, ...row }) => ({
         ...row,
@@ -139,20 +198,14 @@ export const shareVoice = defineAction({
   name: "share_voice",
   title: "分享聲音",
   description:
-    "Shares one of the signed-in member's own voices with every lab member (shared true), or makes it private again (shared false).",
+    "Shares the signed-in member's own voice with every lab member (shared true), or makes it private again (shared false).",
   kind: "mutation",
   input: z.object({ id: z.string().min(1), shared: z.boolean() }),
   run: async (actor, input) => {
     const updated = await db
       .update(voice)
       .set({ shared: input.shared })
-      .where(
-        and(
-          eq(voice.id, input.id),
-          eq(voice.userId, actor.userId),
-          eq(voice.builtin, false)
-        )
-      )
+      .where(and(eq(voice.id, input.id), eq(voice.userId, actor.userId)))
       .returning({ id: voice.id })
     if (!updated.length) throw new Error("找不到你的這個聲音")
     return { id: input.id, shared: input.shared }
@@ -163,7 +216,7 @@ export const deleteVoice = defineAction({
   name: "delete_voice",
   title: "刪除聲音",
   description:
-    "Deletes one of the signed-in member's own voices and its recorded sample for good. An admin may delete a built-in voice.",
+    "Deletes the signed-in member's own voice and its recorded sample for good. An admin may delete a voice an admin made.",
   kind: "mutation",
   input: z.object({ id: z.string().min(1) }),
   run: async (actor, input) => {
@@ -175,7 +228,7 @@ export const deleteVoice = defineAction({
           eq(voice.id, input.id),
           admin
             ? or(eq(voice.userId, actor.userId), eq(voice.builtin, true))
-            : and(eq(voice.userId, actor.userId), eq(voice.builtin, false))
+            : eq(voice.userId, actor.userId)
         )
       )
       .returning({ id: voice.id })
@@ -226,7 +279,6 @@ export const createVoiceConsent = defineAction({
     "Uploads a consent recording in which the speaker reads the fixed sentence for its language, then waits while the worker transcribes it. Returns the consent with status verified or rejected.",
   kind: "mutation",
   input: z.object({
-    name: z.string().trim().min(1, "請填名稱").max(60),
     language: z.enum(["zh", "en"]),
     recording: audio,
     mime,
@@ -242,7 +294,7 @@ export const createVoiceConsent = defineAction({
     await db.insert(voiceConsent).values({
       id,
       userId: actor.userId,
-      name: input.name,
+      name: await nameOf(actor.userId),
       language: input.language,
       recording: input.recording,
       mime: input.mime,
@@ -280,40 +332,37 @@ export const createVoice = defineAction({
   name: "create_voice",
   title: "建立聲音",
   description:
-    "Makes a voice from a sample of up to 60 seconds and a verified consent of the same speaker; the worker compares the two speakers. An admin may instead make a built-in voice, with a consent note saying how the speaker agreed.",
+    "Makes the signed-in member's voice from a sample of up to 60 seconds and a verified consent of the same speaker; the worker compares the two speakers. It is named after the member and replaces the voice they had once it passes. An admin may instead make the voice of another member (owner, their lab account name), with a consent note saying how the speaker agreed, and share it.",
   kind: "mutation",
   input: z.object({
-    name: z.string().trim().min(1, "請填名稱").max(60),
     sample: audio,
     mime,
     consent: z.string().optional(),
-    builtin: z.boolean().default(false),
+    owner: z.string().trim().toLowerCase().min(1).max(60).optional(),
     consentNote: z.string().trim().max(500).optional(),
+    shared: z.boolean().default(false),
   }),
   run: async (actor, input) => {
     const id = newId("voice")
-    if (input.builtin) {
-      if (!(await isAdmin(actor))) throw new Error("只有管理員能新增內建聲音")
-      if (!/^[a-z][a-z0-9-]{1,30}$/.test(input.name))
-        throw new Error("內建聲音的名稱用小寫英文、數字和連字號")
+    if (input.owner) {
+      if (!(await isAdmin(actor)))
+        throw new Error("只有管理員能替其他成員建立聲音")
       if (!input.consentNote) throw new Error("請寫明說話者怎麼同意的")
-      const [taken] = await db
-        .select({ id: voice.id })
-        .from(voice)
-        .where(and(eq(voice.builtin, true), eq(voice.name, input.name)))
-      if (taken) throw new Error("已經有同名的內建聲音")
       requireWorker()
+      const owner = await memberByUsername(input.owner)
+      await dropRejected(owner.id)
       await db.insert(voice).values({
         id,
-        userId: actor.userId,
-        name: input.name,
+        userId: owner.id,
+        name: owner.name,
         builtin: true,
+        shared: input.shared,
         consentNote: input.consentNote,
         sample: input.sample,
         mime: input.mime,
       })
       // No consent to compare: the worker only checks the length and keeps
-      // the speaker embedding, so members cannot copy this voice.
+      // the speaker embedding, so other members cannot copy this voice.
       const jobId = await queueCheck({
         kind: "voice",
         userId: actor.userId,
@@ -325,7 +374,7 @@ export const createVoice = defineAction({
         .select({ status: voice.status, reason: voice.reason })
         .from(voice)
         .where(eq(voice.id, id))
-      return { id, name: input.name, ...row }
+      return { id, name: owner.name, ...(row ?? REPLACED) }
     }
 
     requireWorker()
@@ -342,17 +391,15 @@ export const createVoice = defineAction({
     if (!consent) throw new Error("找不到你的這份同意錄音")
     if (consent.status !== "verified")
       throw new Error("這份同意錄音沒有通過檢查")
-    const [{ n }] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(voice)
-      .where(and(eq(voice.userId, actor.userId), eq(voice.builtin, false)))
-    if (n >= MAX_VOICES) throw new Error(`每人最多 ${MAX_VOICES} 個聲音`)
 
+    const name = await nameOf(actor.userId)
+    await dropRejected(actor.userId)
     await db.insert(voice).values({
       id,
       userId: actor.userId,
-      name: input.name,
+      name,
       consentId: input.consent,
+      shared: input.shared,
       sample: input.sample,
       mime: input.mime,
     })
@@ -367,31 +414,28 @@ export const createVoice = defineAction({
       .select({ status: voice.status, reason: voice.reason })
       .from(voice)
       .where(eq(voice.id, id))
-    return { id, name: input.name, ...row }
+    return { id, name, ...(row ?? REPLACED) }
   },
   mcpExcludedBecause:
     "It takes a recording of the member's own voice, made in the browser recorder or sent to /v1/audio/voices.",
 })
 
-/** The ready voice a speech request names, if the member may use it: a
- * built-in's name, a voice id, or { id }. */
+/** The ready voice a speech request names, if the member may use it: its
+ * owner's lab account name (cctseng), or a voice id. */
 export async function resolveVoice(actor: Actor, ref: string) {
   const byId = ref.startsWith("voice_")
   const [row] = await db
     .select({ id: voice.id, name: voice.name })
     .from(voice)
+    .innerJoin(user, eq(user.id, voice.userId))
     .where(
       and(
-        byId
-          ? eq(voice.id, ref)
-          : and(eq(voice.builtin, true), eq(voice.name, ref.toLowerCase())),
+        byId ? eq(voice.id, ref) : eq(user.username, ref.toLowerCase()),
         eq(voice.status, "ready"),
-        or(
-          eq(voice.builtin, true),
-          eq(voice.shared, true),
-          eq(voice.userId, actor.userId)
-        )
+        or(eq(voice.shared, true), eq(voice.userId, actor.userId))
       )
     )
+    .orderBy(desc(voice.createdAt))
+    .limit(1)
   return row ?? null
 }

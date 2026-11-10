@@ -64,25 +64,25 @@ export const voiceConsent = pgTable(
 )
 
 /** A voice speech can be made in: a member's own (from a verified consent of
- * the same speaker) or a built-in one an admin added. */
+ * the same speaker) or one an admin added from a consent note. */
 export const voice = pgTable(
   "voices",
   {
     /** voice_<hex>, as the OpenAI API names them. */
     id: text().primaryKey(),
-    /** The owner; built-in voices belong to the admin who added them. */
+    /** The member whose voice it is, one voice each. */
     userId: uuid()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     name: text().notNull(),
-    /** Built-in voices are called by name ("cc") and open to every member. */
+    /** Made by an admin from a consent note, not a consent recording. */
     builtin: boolean().notNull().default(false),
     /** A member's voice is private until they share it with every member. */
     shared: boolean().notNull().default(false),
     consentId: text().references(() => voiceConsent.id, {
       onDelete: "set null",
     }),
-    /** For built-in voices: how the speaker agreed, in words. */
+    /** For voices an admin made: how the speaker agreed, in words. */
     consentNote: text(),
     sample: bytea().notNull(),
     mime: text().notNull(),

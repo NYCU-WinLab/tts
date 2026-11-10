@@ -17,7 +17,12 @@ export default async function VoicesPage() {
       <div className="flex flex-col gap-12">
         <PageHeader
           title="聲音"
-          actions={<NewVoice sentences={CONSENT_SENTENCES} />}
+          actions={
+            <NewVoice
+              sentences={CONSENT_SENTENCES}
+              again={voices.some((voice) => voice.mine)}
+            />
+          }
         />
         <VoiceList
           voices={voices.map((voice) => ({

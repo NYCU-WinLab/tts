@@ -31,6 +31,24 @@ async function adminToken() {
   return cached.token
 }
 
+/** A GET on the realm's admin API with the service account's token. */
+async function adminGet(path: string) {
+  const url = `${issuer().replace("/realms/", "/admin/realms/")}${path}`
+  const get = async () =>
+    fetch(url, {
+      headers: { authorization: `Bearer ${await adminToken()}` },
+      cache: "no-store",
+      signal: timeout(),
+    })
+  let response = await get()
+  // A token Keycloak dropped early (restart, revocation): fetch a new one once.
+  if (response.status === 401) {
+    cached = null
+    response = await get()
+  }
+  return response
+}
+
 export type KeycloakUser = {
   username: string
   enabled?: boolean
@@ -45,20 +63,20 @@ export type KeycloakUser = {
 export async function findKeycloakUser(
   sub: string
 ): Promise<KeycloakUser | null> {
-  const url = `${issuer().replace("/realms/", "/admin/realms/")}/users/${encodeURIComponent(sub)}`
-  const get = async () =>
-    fetch(url, {
-      headers: { authorization: `Bearer ${await adminToken()}` },
-      cache: "no-store",
-      signal: timeout(),
-    })
-  let response = await get()
-  // A token Keycloak dropped early (restart, revocation): fetch a new one once.
-  if (response.status === 401) {
-    cached = null
-    response = await get()
-  }
+  const response = await adminGet(`/users/${encodeURIComponent(sub)}`)
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Keycloak user ${response.status}`)
   return (await response.json()) as KeycloakUser
+}
+
+/** One member's Keycloak record and id by their username, or null. */
+export async function findKeycloakUserByUsername(
+  username: string
+): Promise<(KeycloakUser & { id: string }) | null> {
+  const response = await adminGet(
+    `/users?exact=true&username=${encodeURIComponent(username)}`
+  )
+  if (!response.ok) throw new Error(`Keycloak users ${response.status}`)
+  const [found] = (await response.json()) as (KeycloakUser & { id: string })[]
+  return found ?? null
 }
