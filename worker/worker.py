@@ -11,7 +11,7 @@
 #            passes when they are the same speaker.
 #
 # IndexTTS-2 stays loaded (about 7.4 GiB); Whisper and ECAPA load on the first check.
-import difflib, json, os, re, socket, subprocess, tempfile, time, traceback, urllib.error, urllib.request
+import difflib, json, os, re, signal, socket, subprocess, tempfile, time, traceback, urllib.error, urllib.request
 
 URL = os.environ["TTS_URL"].rstrip("/")
 TOKEN = os.environ["WORKER_TOKEN"]
@@ -39,11 +39,29 @@ def log(*args):
     print(time.strftime("%Y-%m-%dT%H:%M:%S"), *args, flush=True)
 
 
+class Deadline(Exception):
+    pass
+
+
+def _deadline(*_):
+    raise Deadline("no answer in time")
+
+
+signal.signal(signal.SIGALRM, _deadline)
+
+
 def request(method, path, body=None, headers=None, timeout=60):
+    """One call to the web app. The socket timeout only bounds each read, and a
+    proxy that keeps a dead upstream's connection open once held a poll for
+    good, so a whole call also has a hard deadline."""
     req = urllib.request.Request(URL + path, data=body, method=method, headers={
         "authorization": "Bearer " + TOKEN, "x-worker": NAME, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, r.headers.get("content-type", ""), r.read()
+    signal.alarm(timeout + 15)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.headers.get("content-type", ""), r.read()
+    finally:
+        signal.alarm(0)
 
 
 def report(job_id, body, content_type="application/json", headers=None):
