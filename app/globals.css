@@ -1,0 +1,352 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+/* A window too short for a full-size lobby preview. */
+@custom-variant short (@media (max-height: 760px));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans:
+    var(--font-inter), var(--font-noto-sans-jp), var(--font-noto-sans-tc),
+    sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), var(--font-noto-sans-jp),
+    var(--font-noto-sans-tc), monospace;
+  --text-*: initial;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --font-heading:
+    var(--font-inter), var(--font-noto-sans-jp), var(--font-noto-sans-tc),
+    sans-serif;
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --radius-control: var(--radius);
+  --radius-menu: calc(var(--radius) + 0.25rem);
+  --radius-surface: calc(var(--radius) + 1.5rem);
+  --font-inter: var(--font-inter);
+  --font-noto-sans-jp: var(--font-noto-sans-jp);
+  --font-noto-sans-tc: var(--font-noto-sans-tc);
+  --font-jetbrains-mono: var(--font-jetbrains-mono);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-overlay: var(--overlay);
+  --color-destructive: var(--destructive);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.97 0.005 85);
+  --foreground: oklch(0.25 0 0);
+  --primary: oklch(0.378 0.182 262.5);
+  --primary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.93 0.005 85);
+  --muted-foreground: oklch(0.52 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.52 0.09 185);
+  --warning: oklch(0.55 0.112 85);
+  --border: oklch(0.89 0.005 85);
+  --overlay: oklch(0.97 0.005 85 / 85%);
+  --input: oklch(0.89 0.005 85);
+  --ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.17 0 0);
+  --foreground: oklch(0.88 0 0);
+  --primary: oklch(0.68 0.168 262.5);
+  --primary-foreground: oklch(0.145 0 0);
+  --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.62 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.78 0.1 185);
+  --warning: oklch(0.84 0.12 85);
+  --border: oklch(1 0 0 / 10%);
+  --overlay: oklch(0.17 0 0 / 85%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@utility w-menu {
+  width: calc(var(--anchor-width) + 0.5rem);
+}
+
+@utility duration-state {
+  --tw-duration: 150ms;
+  transition-duration: 150ms;
+  --tw-ease: cubic-bezier(0, 0, 0.2, 1);
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+@utility duration-overlay {
+  --tw-duration: 200ms;
+  transition-duration: 200ms;
+  --tw-ease: cubic-bezier(0, 0, 0.2, 1);
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* The page's one focus moves on a spring: 500ms, overshooting 10%. */
+@utility duration-spring {
+  --tw-duration: 500ms;
+  transition-duration: 500ms;
+  --tw-ease: linear(
+    0,
+    0.04,
+    0.142,
+    0.278,
+    0.429,
+    0.578,
+    0.715,
+    0.833,
+    0.928,
+    1.001,
+    1.051,
+    1.083,
+    1.099,
+    1.103,
+    1.097,
+    1.086,
+    1.072,
+    1.056,
+    1.041,
+    1.027,
+    1.016,
+    1.006,
+    0.999,
+    0.994,
+    1
+  );
+  transition-timing-function: linear(
+    0,
+    0.04,
+    0.142,
+    0.278,
+    0.429,
+    0.578,
+    0.715,
+    0.833,
+    0.928,
+    1.001,
+    1.051,
+    1.083,
+    1.099,
+    1.103,
+    1.097,
+    1.086,
+    1.072,
+    1.056,
+    1.041,
+    1.027,
+    1.016,
+    1.006,
+    0.999,
+    0.994,
+    1
+  );
+}
+
+/* Arriving on the page: the focus rises on the spring, a list's rows
+   rise one after another, 30ms apart, quietly. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 0.5rem;
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility animate-rise {
+  animation: rise 500ms
+    linear(
+      0,
+      0.04,
+      0.142,
+      0.278,
+      0.429,
+      0.578,
+      0.715,
+      0.833,
+      0.928,
+      1.001,
+      1.051,
+      1.083,
+      1.099,
+      1.103,
+      1.097,
+      1.086,
+      1.072,
+      1.056,
+      1.041,
+      1.027,
+      1.016,
+      1.006,
+      0.999,
+      0.994,
+      1
+    )
+    both;
+}
+
+@utility stagger-rise {
+  & > * {
+    animation: rise 200ms cubic-bezier(0, 0, 0.2, 1) both;
+  }
+  & > :nth-child(2) {
+    animation-delay: 30ms;
+  }
+  & > :nth-child(3) {
+    animation-delay: 60ms;
+  }
+  & > :nth-child(4) {
+    animation-delay: 90ms;
+  }
+  & > :nth-child(5) {
+    animation-delay: 120ms;
+  }
+  & > :nth-child(6) {
+    animation-delay: 150ms;
+  }
+  & > :nth-child(7) {
+    animation-delay: 180ms;
+  }
+  & > :nth-child(8) {
+    animation-delay: 210ms;
+  }
+  & > :nth-child(n + 9) {
+    animation-delay: 240ms;
+  }
+}
+
+/* A number-ticker digit column; data-digit picks the row. */
+@utility digit-roll {
+  transition: translate 500ms
+    linear(
+      0,
+      0.04,
+      0.142,
+      0.278,
+      0.429,
+      0.578,
+      0.715,
+      0.833,
+      0.928,
+      1.001,
+      1.051,
+      1.083,
+      1.099,
+      1.103,
+      1.097,
+      1.086,
+      1.072,
+      1.056,
+      1.041,
+      1.027,
+      1.016,
+      1.006,
+      0.999,
+      0.994,
+      1
+    );
+  &[data-digit="1"] {
+    translate: 0 -10%;
+  }
+  &[data-digit="2"] {
+    translate: 0 -20%;
+  }
+  &[data-digit="3"] {
+    translate: 0 -30%;
+  }
+  &[data-digit="4"] {
+    translate: 0 -40%;
+  }
+  &[data-digit="5"] {
+    translate: 0 -50%;
+  }
+  &[data-digit="6"] {
+    translate: 0 -60%;
+  }
+  &[data-digit="7"] {
+    translate: 0 -70%;
+  }
+  &[data-digit="8"] {
+    translate: 0 -80%;
+  }
+  &[data-digit="9"] {
+    translate: 0 -90%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+  }
+  .animate-rise,
+  .stagger-rise > * {
+    animation-name: appear;
+  }
+  .digit-roll {
+    transition: none;
+  }
+}
+/* A reaction floats up over its sender's tile and fades: 3s. */
+@keyframes float-away {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    scale: 0.6;
+  }
+  10% {
+    opacity: 1;
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 -12rem;
+  }
+}
+
+@utility animate-float-away {
+  animation: float-away 3s cubic-bezier(0, 0, 0.2, 1) both;
+}
