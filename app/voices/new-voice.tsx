@@ -3,9 +3,8 @@
 import * as React from "react"
 import { toast } from "sonner"
 
-import { FormDialog, FormField } from "@/components/form-dialog"
+import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 import { createVoiceAction } from "../actions"
@@ -18,12 +17,15 @@ const SAMPLE_TEXT: Record<Language, string> = {
   en: "The weather is nice today. This afternoon we will meet in the lab to discuss the new experiment. Please bring last week's results, and raise any questions you have.",
 }
 
-// Makes a voice in one form: name, the consent sentence read aloud, then a
-// sample of 10 to 60 seconds. The server checks both before the voice works.
+// Records the member's own voice in one form: the consent sentence read
+// aloud, then a sample of 10 to 60 seconds. The server checks both; the
+// voice takes the member's name and replaces the one they had.
 export function NewVoice({
   sentences,
+  again,
 }: {
   sentences: Record<Language, string>
+  again: boolean
 }) {
   const [language, setLanguage] = React.useState<Language>("zh")
   const [consent, setConsent] = React.useState<Blob>()
@@ -45,23 +47,20 @@ export function NewVoice({
       toast.error(result.error)
       throw new Error(result.error)
     }
-    toast.success("聲音建好了")
+    toast.success(again ? "聲音換好了" : "聲音建好了")
     setConsent(undefined)
     setSample(undefined)
   }
 
   return (
     <FormDialog
-      trigger={<Button>新增聲音</Button>}
-      title="新增聲音"
+      trigger={<Button>{again ? "重錄我的聲音" : "錄我的聲音"}</Button>}
+      title={again ? "重錄我的聲音" : "錄我的聲音"}
       size="wide"
       submitLabel="建立"
       pendingLabel="檢查錄音中…"
       onSubmit={submit}
     >
-      <FormField label="名稱" required>
-        <Input name="name" maxLength={60} />
-      </FormField>
       <div className="flex gap-2">
         {(["zh", "en"] as const).map((item) => (
           <Button

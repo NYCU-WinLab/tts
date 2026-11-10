@@ -5,7 +5,7 @@
 // worker routes and the actions in this folder use these.
 import { createHash, timingSafeEqual } from "node:crypto"
 
-import { and, eq, lt, ne, or, sql } from "drizzle-orm"
+import { and, eq, lt, ne, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { job, voice, voiceConsent } from "@/lib/db/schema"
@@ -249,9 +249,9 @@ export async function finishJob(id: string, report: JobReport) {
   return true
 }
 
-/** A member's new voice that sounds like a voice someone else owns (or a
- * built-in) is refused, even with a consent: the consent could have been
- * spoken by a cloned voice. Built-in voices skip the check. */
+/** A member's new voice that sounds like a voice someone else owns is
+ * refused, even with a consent: the consent could have been spoken by a
+ * cloned voice. Voices an admin made skip the check. */
 export const COPY_MAX_SIMILARITY = 0.6
 
 const cosine = (a: number[], b: number[]) => {
@@ -280,7 +280,7 @@ async function copiedVoice(voiceId: string, embedding: number[]) {
         sql`${voice.embedding} is not null`,
         eq(voice.status, "ready"),
         sql`${voice.id} <> ${voiceId}`,
-        or(ne(voice.userId, self.userId), eq(voice.builtin, true))
+        ne(voice.userId, self.userId)
       )
     )
   for (const other of others)

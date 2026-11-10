@@ -37,9 +37,7 @@ export async function createVoiceAction(data: FormData) {
     const sampleFile = data.get("sample")
     if (!(consentFile instanceof File) || !(sampleFile instanceof File))
       throw new Error("請錄好兩段錄音")
-    const name = String(data.get("name") ?? "")
     const consent = await runAction(createVoiceConsent, actor, {
-      name,
       language: String(data.get("language") ?? "zh"),
       recording: Buffer.from(await consentFile.arrayBuffer()),
       mime: consentFile.type,
@@ -49,7 +47,7 @@ export async function createVoiceAction(data: FormData) {
         `同意錄音沒通過：${consent.reason ?? ""}（聽到「${consent.transcript ?? ""}」）`
       )
     const made = await runAction(createVoice, actor, {
-      name,
+      shared: data.get("shared") === "true",
       consent: consent.id,
       sample: Buffer.from(await sampleFile.arrayBuffer()),
       mime: sampleFile.type,

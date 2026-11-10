@@ -25,8 +25,8 @@ const shape = (consent: Consent) => ({
   created_at: unixTime(consent.createdAt),
 })
 
-// POST /v1/audio/voice_consents (multipart: name, language, recording), as
-// OpenAI. The speaker reads the sentence for the language (GET lists them).
+// POST /v1/audio/voice_consents (multipart: language, recording), as
+// OpenAI; a name sent is ignored, the consent takes the member's name. The speaker reads the sentence for the language (GET lists them).
 // Answers once the worker checked it: 200 verified, 400 rejected.
 export async function POST(request: Request) {
   return withApiKey(request, async (actor) => {
@@ -34,7 +34,6 @@ export async function POST(request: Request) {
     if (!form) return openaiError(400, "Body must be multipart/form-data.")
     const recording = await fileField(form, "recording")
     const consent = await runAction(createVoiceConsent, actor, {
-      name: form.get("name") ?? "",
       language: form.get("language") ?? "zh",
       recording: recording.bytes,
       mime: recording.mime,

@@ -18,12 +18,11 @@ import { deleteVoiceAction, shareVoiceAction } from "../actions"
 
 type Voice = {
   id: string
-  name: string
-  builtin: boolean
+  owner: string
+  username: string | null
   shared: boolean
   status: string
   reason: string | null
-  owner: string
   mine: boolean
 }
 
@@ -48,7 +47,7 @@ export function VoiceList({ voices }: { voices: Voice[] }) {
       <TableHeader>
         <TableRow>
           <TableHead>名稱</TableHead>
-          <TableHead>擁有者</TableHead>
+          <TableHead>API 名稱</TableHead>
           <TableHead>狀態</TableHead>
           <TableHead className="text-right">操作</TableHead>
         </TableRow>
@@ -56,21 +55,16 @@ export function VoiceList({ voices }: { voices: Voice[] }) {
       <TableBody>
         {voices.map((voice) => (
           <TableRow key={voice.id}>
-            <TableCell className="font-medium">
-              {voice.name}
-              {voice.builtin && (
-                <span className="ml-2 text-muted-foreground">內建</span>
-              )}
-            </TableCell>
-            <TableCell>{voice.owner}</TableCell>
+            <TableCell className="font-medium">{voice.owner}</TableCell>
+            <TableCell className="font-mono">{voice.username}</TableCell>
             <TableCell>
               {voice.status === "rejected"
                 ? `${STATUS.rejected}：${voice.reason ?? ""}`
                 : (STATUS[voice.status] ?? voice.status)}
-              {voice.mine && voice.shared && !voice.builtin && "、已分享"}
+              {voice.mine && (voice.shared ? "、已分享" : "、只有自己")}
             </TableCell>
             <TableCell className="text-right">
-              {voice.mine && !voice.builtin && (
+              {voice.mine && (
                 <div className="flex justify-end gap-2">
                   {voice.status === "ready" && (
                     <Button
@@ -87,7 +81,7 @@ export function VoiceList({ voices }: { voices: Voice[] }) {
                     variant="destructive"
                     disabled={pending}
                     onClick={() => {
-                      if (confirm(`刪除「${voice.name}」？`))
+                      if (confirm("刪除你的聲音？"))
                         run(() => deleteVoiceAction(voice.id))
                     }}
                   >

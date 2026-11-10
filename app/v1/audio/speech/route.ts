@@ -6,8 +6,8 @@ import { openaiError, withApiKey } from "@/lib/openai/http"
 export const runtime = "nodejs"
 
 // POST /v1/audio/speech, as OpenAI: { model, input, voice, response_format,
-// speed } returns the audio bytes. voice is a built-in's name ("cc"), a
-// voice id, or { "id": "voice_..." }. model is accepted and ignored: there
+// speed } returns the audio bytes. voice is the owner's lab account name
+// ("cctseng"), a voice id, or { "id": "voice_..." }. model is accepted and ignored: there
 // is one model, IndexTTS-2.
 export async function POST(request: Request) {
   return withApiKey(request, async (actor) => {

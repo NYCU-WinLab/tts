@@ -62,3 +62,18 @@ export async function findKeycloakUser(
   if (!response.ok) throw new Error(`Keycloak user ${response.status}`)
   return (await response.json()) as KeycloakUser
 }
+
+/** One member's Keycloak record and id by their username, or null. */
+export async function findKeycloakUserByUsername(
+  username: string
+): Promise<(KeycloakUser & { id: string }) | null> {
+  const url = `${issuer().replace("/realms/", "/admin/realms/")}/users?exact=true&username=${encodeURIComponent(username)}`
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${await adminToken()}` },
+    cache: "no-store",
+    signal: timeout(),
+  })
+  if (!response.ok) throw new Error(`Keycloak users ${response.status}`)
+  const [found] = (await response.json()) as (KeycloakUser & { id: string })[]
+  return found ?? null
+}

@@ -19,17 +19,17 @@ Members sign in with their lab account. Speech runs on a lab GPU with IndexTTS-2
 
 ```
 > "Say 'the meeting moves to 2 pm' in CC's voice"
-  ⚡ speak { "input": "會議改到下午兩點", "voice": "cc" }
+  ⚡ speak { "input": "會議改到下午兩點", "voice": "cctseng" }
 ✓ { "url": "https://tts.winlab.tw/a/…/….mp3", "seconds": 2.1 }
 ```
 
 ## What it does
 
 - **Speaks text** in a voice through `POST /v1/audio/speech`, the page, or MCP.
-- **Clones a member's voice** from a consent recording and a sample of up to 60 seconds, recorded in the browser or sent to `/v1/audio/voice_consents` and `/v1/audio/voices`.
+- **Clones a member's own voice** from a consent recording and a sample of up to 60 seconds, recorded in the browser or sent to `/v1/audio/voice_consents` and `/v1/audio/voices`. Each member has one voice, named after their lab account; recording again replaces it.
 - **Checks consent**: Whisper must hear the fixed consent sentence, and a speaker model must find the sample and the consent recording to be the same person.
-- **Keeps voices private** until the owner shares one with every member; the owner can delete it, and its recordings go with it.
-- **Offers built-in voices** an admin adds with a note of how the speaker agreed, such as `cc`.
+- **Keeps a voice private** until its owner shares it with every member; the owner can delete it, and its recordings go with it.
+- **Lets an admin add a member's voice** with a note of how the speaker agreed, such as Prof. Tseng's (`cctseng`), owned by that member.
 
 ## Use
 
@@ -39,7 +39,7 @@ Make a key at https://tts.winlab.tw/keys, then:
 curl https://tts.winlab.tw/v1/audio/speech \
   -H "Authorization: Bearer $TTS_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "indextts-2", "input": "大家好", "voice": "cc"}' \
+  -d '{"model": "indextts-2", "input": "大家好", "voice": "cctseng"}' \
   -o speech.mp3
 ```
 
@@ -47,10 +47,10 @@ curl https://tts.winlab.tw/v1/audio/speech \
 from openai import OpenAI
 
 client = OpenAI(base_url="https://tts.winlab.tw/v1", api_key=TTS_API_KEY)
-client.audio.speech.create(model="indextts-2", voice="cc", input="大家好").write_to_file("speech.mp3")
+client.audio.speech.create(model="indextts-2", voice="cctseng", input="大家好").write_to_file("speech.mp3")
 ```
 
-- `voice`: a built-in name (`cc`), a voice id (`voice_…`), or `{"id": "voice_…"}`.
+- `voice`: the owner's lab account name (`cctseng`), a voice id (`voice_…`), or `{"id": "voice_…"}`.
 - `response_format`: `mp3` (default), `opus`, `aac`, `flac`, `wav` or `pcm` (24 kHz, 16-bit mono).
 - `speed`: 0.25 to 4.
 - `model` is accepted and ignored: there is one model.
@@ -61,13 +61,13 @@ Your own voice, as OpenAI's custom voices:
 ```bash
 # 1. Read the sentence for your language (GET /v1/audio/voice_consents lists them).
 curl https://tts.winlab.tw/v1/audio/voice_consents -H "Authorization: Bearer $TTS_API_KEY" \
-  -F name=me -F language=zh -F recording=@consent.wav
+  -F language=zh -F recording=@consent.wav
 # 2. A sample of the same speaker, 60 seconds or less.
 curl https://tts.winlab.tw/v1/audio/voices -H "Authorization: Bearer $TTS_API_KEY" \
-  -F name=me -F audio_sample=@sample.wav -F consent=cons_…
+  -F audio_sample=@sample.wav -F consent=cons_… -F shared=true
 ```
 
-`GET /v1/audio/voices` lists the voices you can use; `DELETE /v1/audio/voices/<id>` deletes yours.
+A `name` is ignored: the voice takes your name. `shared=true` lets every member speak in it. `GET /v1/audio/voices` lists the voices you can use; `DELETE /v1/audio/voices/<id>` deletes yours.
 
 ## MCP
 
@@ -105,7 +105,7 @@ docker compose up -d --build
 
 ### Configuration
 
-See `.env.example`. `WORKER_TOKEN` must match on both sides. `TTS_ADMINS` lists who may add built-in voices.
+See `.env.example`. `WORKER_TOKEN` must match on both sides. `TTS_ADMINS` lists who may add a member's voice from a consent note.
 
 ## Limitations
 

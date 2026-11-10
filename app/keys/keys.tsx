@@ -52,7 +52,7 @@ export function NewKey({ base }: { base: string }) {
     ? `curl ${base}/v1/audio/speech \\
   -H "Authorization: Bearer ${made}" \\
   -H "Content-Type: application/json" \\
-  -d '{"model": "indextts-2", "input": "大家好", "voice": "cc"}' \\
+  -d '{"model": "indextts-2", "input": "大家好", "voice": "cctseng"}' \\
   -o speech.mp3`
     : ""
 
