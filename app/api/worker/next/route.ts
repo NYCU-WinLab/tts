@@ -1,4 +1,4 @@
-import { claimNext, isWorker, sweepResults } from "@/lib/actions/jobs"
+import { claimNext, isWorker } from "@/lib/actions/jobs"
 
 export const runtime = "nodejs"
 
@@ -9,9 +9,6 @@ export async function GET(request: Request) {
     return new Response(null, { status: 401 })
   const name = request.headers.get("x-worker") ?? "worker"
   const next = await claimNext(name, 25_000)
-  if (!next) {
-    await sweepResults().catch(() => {})
-    return new Response(null, { status: 204 })
-  }
+  if (!next) return new Response(null, { status: 204 })
   return Response.json(next)
 }
