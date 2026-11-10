@@ -244,9 +244,64 @@ export async function finishJob(id: string, report: JobReport) {
               : (report.reason ?? "和同意錄音不是同一人"),
         })
         .where(eq(voice.id, voiceId))
+      if (report.ok && !copied) await keepNewest(tx, voiceId)
     }
   })
   return true
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Each member has one voice: the newest one that passed. When a voice
+ * passes, the owner's older voices go; if a newer one passed first, this one
+ * goes instead. A lock per owner keeps two checks from deleting each other.
+ * Speech still queued in a deleted voice fails at once. */
+async function keepNewest(tx: Tx, voiceId: string) {
+  const [self] = await tx
+    .select({ userId: voice.userId })
+    .from(voice)
+    .where(eq(voice.id, voiceId))
+  if (!self) return
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${"voice:" + self.userId}))`
+  )
+  // Compared in SQL: created_at has microseconds a JS Date would drop.
+  const created = sql`(select created_at from ${voice} where id = ${voiceId})`
+  const [newer] = await tx
+    .select({ id: voice.id })
+    .from(voice)
+    .where(
+      and(
+        eq(voice.userId, self.userId),
+        eq(voice.status, "ready"),
+        ne(voice.id, voiceId),
+        sql`${voice.createdAt} >= ${created}`
+      )
+    )
+    .limit(1)
+  const gone = await tx
+    .delete(voice)
+    .where(
+      newer
+        ? eq(voice.id, voiceId)
+        : and(
+            eq(voice.userId, self.userId),
+            ne(voice.id, voiceId),
+            sql`${voice.createdAt} <= ${created}`
+          )
+    )
+    .returning({ id: voice.id })
+  for (const { id } of gone)
+    await tx
+      .update(job)
+      .set({
+        status: "failed",
+        error: "voice replaced",
+        finishedAt: new Date(),
+      })
+      .where(
+        and(eq(job.status, "queued"), sql`${job.params}->>'voiceId' = ${id}`)
+      )
 }
 
 /** A member's new voice that sounds like a voice someone else owns is

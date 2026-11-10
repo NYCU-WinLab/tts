@@ -23,6 +23,8 @@ export const CONSENT_SENTENCES = {
 export type ConsentLanguage = keyof typeof CONSENT_SENTENCES
 
 const MAX_CONSENTS = 20
+/** A voice gone by the time its check ends: a newer one passed first. */
+const REPLACED = { status: "rejected", reason: "已被同時送出的另一段錄音取代" }
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024
 const CHECK_TIMEOUT_MS = 120_000
 const MAX_PENDING = 3
@@ -79,14 +81,19 @@ async function nameOf(userId: string) {
  * their user and Keycloak link now, from Keycloak, so their first sign-in
  * lands on the same user and finds the voice made for them. */
 async function memberByUsername(username: string) {
-  const [known] = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .where(eq(user.username, username))
-  if (known) return known
   const found = await findKeycloakUserByUsername(username)
   if (!found?.enabled || !found.email)
     throw new Error(`找不到成員「${username}」`)
+  // Keycloak's id is what sign-in matches on, so look the member up by it:
+  // their username or email may have changed since they last signed in.
+  const [known] = await db
+    .select({ id: user.id, name: user.name })
+    .from(account)
+    .innerJoin(user, eq(user.id, account.userId))
+    .where(
+      and(eq(account.providerId, "keycloak"), eq(account.accountId, found.id))
+    )
+  if (known) return known
   const name =
     found.attributes?.chinese_name?.[0]?.trim() ||
     [found.firstName, found.lastName].filter(Boolean).join(" ").trim() ||
@@ -112,11 +119,11 @@ async function memberByUsername(username: string) {
   })
 }
 
-/** A member's voice that just passed replaces the ones they had. */
-async function replaceOlder(userId: string, keep: string) {
+/** Rejected tries only hold their recordings: a new try clears them. */
+async function dropRejected(userId: string) {
   await db
     .delete(voice)
-    .where(and(eq(voice.userId, userId), sql`${voice.id} <> ${keep}`))
+    .where(and(eq(voice.userId, userId), eq(voice.status, "rejected")))
 }
 
 export async function isAdmin(actor: Actor) {
@@ -331,7 +338,7 @@ export const createVoice = defineAction({
     sample: audio,
     mime,
     consent: z.string().optional(),
-    owner: z.string().trim().min(1).max(60).optional(),
+    owner: z.string().trim().toLowerCase().min(1).max(60).optional(),
     consentNote: z.string().trim().max(500).optional(),
     shared: z.boolean().default(false),
   }),
@@ -343,6 +350,7 @@ export const createVoice = defineAction({
       if (!input.consentNote) throw new Error("請寫明說話者怎麼同意的")
       requireWorker()
       const owner = await memberByUsername(input.owner)
+      await dropRejected(owner.id)
       await db.insert(voice).values({
         id,
         userId: owner.id,
@@ -366,8 +374,7 @@ export const createVoice = defineAction({
         .select({ status: voice.status, reason: voice.reason })
         .from(voice)
         .where(eq(voice.id, id))
-      if (row?.status === "ready") await replaceOlder(owner.id, id)
-      return { id, name: owner.name, ...row }
+      return { id, name: owner.name, ...(row ?? REPLACED) }
     }
 
     requireWorker()
@@ -386,6 +393,7 @@ export const createVoice = defineAction({
       throw new Error("這份同意錄音沒有通過檢查")
 
     const name = await nameOf(actor.userId)
+    await dropRejected(actor.userId)
     await db.insert(voice).values({
       id,
       userId: actor.userId,
@@ -406,8 +414,7 @@ export const createVoice = defineAction({
       .select({ status: voice.status, reason: voice.reason })
       .from(voice)
       .where(eq(voice.id, id))
-    if (row?.status === "ready") await replaceOlder(actor.userId, id)
-    return { id, name, ...row }
+    return { id, name, ...(row ?? REPLACED) }
   },
   mcpExcludedBecause:
     "It takes a recording of the member's own voice, made in the browser recorder or sent to /v1/audio/voices.",
