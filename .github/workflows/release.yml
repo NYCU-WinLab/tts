@@ -1,0 +1,22 @@
+name: release
+
+# Ships only images ci passed: retags tree-<tree> as sha-<commit> and main,
+# then carrel-deployd on the Carrel machine runs deploy/carrel-start.sh and
+# rolls back if web is unhealthy. When ci has not passed these files yet,
+# it waits for ci on main inside this run.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  ship:
+    uses: zyx1121/.github/.github/workflows/ship.yml@main
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      id-token: write
+    with:
+      images: '["ghcr.io/nycu-winlab/tts"]'
+      tenant: winfra
+      app: tts

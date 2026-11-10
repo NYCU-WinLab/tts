@@ -1,0 +1,25 @@
+# The GPU worker on the GPU box. Needs the NVIDIA container toolkit, the
+# IndexTTS-2 weights in ${MODEL_DIR} (see worker/README.md) and a .env with
+# TTS_URL and WORKER_TOKEN.
+name: tts-worker
+
+services:
+  worker:
+    build: .
+    image: tts-worker:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MODEL_DIR: /models/IndexTTS-2
+      CACHE_DIR: /cache
+      HF_HOME: /cache/hf
+    volumes:
+      - ${MODEL_DIR:-./models}:/models:ro
+      - ${CACHE_DIR:-./cache}:/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
