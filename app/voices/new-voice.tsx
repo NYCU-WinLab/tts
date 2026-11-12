@@ -4,6 +4,7 @@ import * as React from "react"
 import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form-dialog"
+import { Toggle } from "@/components/ui/toggle"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 
@@ -63,17 +64,17 @@ export function NewVoice({
     >
       <div className="flex gap-2">
         {(["zh", "en"] as const).map((item) => (
-          <Button
+          <Toggle
             key={item}
-            type="button"
-            variant={language === item ? "default" : "outline"}
-            onClick={() => {
+            size="text"
+            pressed={language === item}
+            onPressedChange={() => {
               setLanguage(item)
               setConsent(undefined)
             }}
           >
             {item === "zh" ? "中文" : "English"}
-          </Button>
+          </Toggle>
         ))}
       </div>
       <Recorder

@@ -38,7 +38,7 @@ export function History({ speeches }: { speeches: Speech[] }) {
         {speeches.map((speech, index) => (
           <li key={speech.id} className="flex flex-col gap-2 py-4">
             <p className="break-words whitespace-pre-wrap">{speech.input}</p>
-            <div className="flex items-center gap-4 text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
               <span>{speech.voice}</span>
               <span className="tabular-nums">
                 {time.format(new Date(speech.createdAt))}
