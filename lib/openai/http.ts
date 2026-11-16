@@ -46,6 +46,23 @@ export async function withApiKey(
   }
 }
 
+/** Audio types by file extension, for clients such as curl that send every
+ * file as application/octet-stream; OpenAI goes by the name too. */
+const BY_EXTENSION: Record<string, string> = {
+  mp3: "audio/mpeg",
+  mpga: "audio/mpeg",
+  mpeg: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  opus: "audio/ogg",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  webm: "audio/webm",
+  m4a: "audio/mp4",
+  mp4: "audio/mp4",
+}
+
 /** A multipart file field as bytes and type. */
 export async function fileField(form: FormData, name: string) {
   const value = form.get(name)
@@ -53,9 +70,14 @@ export async function fileField(form: FormData, name: string) {
     throw new z.ZodError([
       { code: "custom", path: [name], message: `請附上 ${name} 檔案` },
     ])
+  const generic = !value.type || value.type === "application/octet-stream"
+  const extension = value.name.split(".").pop()?.toLowerCase() ?? ""
   return {
     bytes: Buffer.from(await value.arrayBuffer()),
-    mime: value.type || "application/octet-stream",
+    mime:
+      (generic && BY_EXTENSION[extension]) ||
+      value.type ||
+      "application/octet-stream",
   }
 }
 
