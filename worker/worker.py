@@ -73,9 +73,9 @@ def report(job_id, body, content_type="application/json", headers=None):
     request("POST", f"/api/worker/jobs/{job_id}", body, {"content-type": content_type, **(headers or {})})
 
 
-def ffmpeg(args, data=None):
+def ffmpeg(args, data=None, timeout=300):
     p = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", *args], input=data,
-                       capture_output=True)
+                       capture_output=True, timeout=timeout)
     if p.returncode:
         raise RuntimeError("ffmpeg: " + p.stderr.decode(errors="replace")[-300:])
     return p.stdout
@@ -83,7 +83,7 @@ def ffmpeg(args, data=None):
 
 def duration(path):
     p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
-                        "default=nw=1:nk=1", path], capture_output=True, text=True)
+                        "default=nw=1:nk=1", path], capture_output=True, text=True, timeout=60)
     return float(p.stdout.strip() or 0)
 
 
@@ -210,7 +210,8 @@ def compare(expected, heard, language):
 def transcription(job):
     p = job["params"]
     with tempfile.TemporaryDirectory() as tmp:
-        path = fetch_wav("job", job["id"], 16000, tmp)
+        # Decoding stops just past the limit, so a long silent file cannot hold the worker.
+        path = fetch_wav("job", job["id"], 16000, tmp, TRANSCRIBE_MAX_S + 1)
         seconds = duration(path)
         if seconds > TRANSCRIBE_MAX_S:
             raise RuntimeError(f"recording longer than {TRANSCRIBE_MAX_S} s")

@@ -1,15 +1,20 @@
 import { z } from "zod"
 
 import { defineAction } from "@/lib/actions/define"
+import { eq, sql } from "drizzle-orm"
+
 import {
   enqueue,
   speechAudioById,
+  sweepTranscriptions,
   waitFor,
   workerOnline,
   type Transcript,
 } from "@/lib/actions/jobs"
 import { MAX_INPUT } from "@/lib/actions/speech"
 import { audio, mime } from "@/lib/actions/voices"
+import { db } from "@/lib/db"
+import { job } from "@/lib/db/schema"
 
 // Speech to text with the worker's Whisper. Made for checking generated
 // speech: with the text it should say, the answer also scores the reading
@@ -36,6 +41,7 @@ export const transcribe = defineAction({
   }),
   run: async (actor, input) => {
     if (!workerOnline()) throw new Error("語音主機離線，請稍後再試")
+    await sweepTranscriptions()
     const id = await enqueue(
       {
         kind: "transcription",
@@ -55,6 +61,12 @@ export const transcribe = defineAction({
     if (done.status === "failed")
       throw new Error(`轉文字失敗：${done.error ?? "原因不明"}`)
     const result = await speechAudioById(id)
+    // Nothing of the recording is kept once the answer is read: the
+    // transcript and the expected text go with it.
+    await db
+      .update(job)
+      .set({ result: null, params: sql`${job.params} - 'expected'` })
+      .where(eq(job.id, id))
     if (!result) throw new Error("轉文字的結果不見了")
     return JSON.parse(result.audio.toString("utf8")) as Transcript
   },

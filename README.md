@@ -126,6 +126,7 @@ See `.env.example`. `WORKER_TOKEN` must match on both sides. `TTS_ADMINS` lists 
 - One worker serves one job at a time; a busy queue answers `429` past 3 waiting requests per member.
 - No streaming: the audio comes back whole.
 - Audio links and results are kept for 24 hours.
+- A recording sent for transcription is deleted once heard, and its transcript once the answer is sent; neither stays more than 10 minutes.
 
 ## Develop
 

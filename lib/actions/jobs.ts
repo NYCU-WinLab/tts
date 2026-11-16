@@ -95,6 +95,23 @@ export async function waitFor(id: string, timeoutMs: number) {
     if (!row) throw new Error("工作不見了")
     if (row.status === "done" || row.status === "failed") return row
     if (Date.now() > until) {
+      // A transcription nobody waits for is dropped even while running, so
+      // its recording goes now; the worker's late report is then refused.
+      await db
+        .update(job)
+        .set({
+          status: "failed",
+          error: "timeout",
+          input: null,
+          finishedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(job.id, id),
+            eq(job.kind, "transcription"),
+            sql`${job.status} in ('queued','running')`
+          )
+        )
       // Nobody waits for it any more: drop it if the worker has not started,
       // and reject the consent or voice it was checking.
       const dropped = await db
@@ -125,9 +142,36 @@ export async function waitFor(id: string, timeoutMs: number) {
   }
 }
 
+/** A recording to transcribe and its transcript are kept no longer than
+ * this, even when the request that waited on them never came back. */
+const TRANSCRIPTION_KEEP_MS = 10 * 60 * 1000
+
+/** Clears what old transcription jobs hold: the recording, the transcript
+ * and the expected text. The row stays, for usage counts. */
+export async function sweepTranscriptions() {
+  await db
+    .update(job)
+    .set({
+      status: sql`case when ${job.status} in ('queued','running') then 'failed' else ${job.status} end`,
+      error: sql`case when ${job.status} in ('queued','running') then 'expired' else ${job.error} end`,
+      finishedAt: sql`coalesce(${job.finishedAt}, now())`,
+      input: null,
+      result: null,
+      params: sql`${job.params} - 'expected'`,
+    })
+    .where(
+      and(
+        eq(job.kind, "transcription"),
+        lt(job.createdAt, new Date(Date.now() - TRANSCRIPTION_KEEP_MS)),
+        sql`(${job.input} is not null or ${job.result} is not null or ${job.params} ? 'expected')`
+      )
+    )
+}
+
 /** Gives the oldest queued job to the worker, or null after waitMs. */
 export async function claimNext(worker: string, waitMs: number) {
   markWorkerSeen()
+  await sweepTranscriptions()
   // A job left running by a worker that died goes back in the queue once.
   await db
     .update(job)
@@ -135,6 +179,7 @@ export async function claimNext(worker: string, waitMs: number) {
     .where(
       and(
         eq(job.status, "running"),
+        ne(job.kind, "transcription"),
         lt(job.startedAt, new Date(Date.now() - RUNNING_TIMEOUT_MS))
       )
     )
