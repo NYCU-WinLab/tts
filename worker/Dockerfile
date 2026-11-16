@@ -16,7 +16,7 @@ WORKDIR /opt/index-tts
 RUN git clone --filter=blob:none https://github.com/index-tts/index-tts . \
  && git checkout "$INDEXTTS_REV" \
  && uv sync --frozen --no-dev --python /usr/local/bin/python3.11 \
- && uv pip install --python /opt/venv/bin/python faster-whisper==1.2.1 speechbrain==1.0.3 pypinyin \
+ && uv pip install --python /opt/venv/bin/python faster-whisper==1.2.1 speechbrain==1.0.3 pypinyin zhconv \
  && rm -rf /root/.cache
 
 ENV PYTHONPATH=/opt/index-tts

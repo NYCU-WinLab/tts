@@ -26,6 +26,7 @@ Members sign in with their lab account. Speech runs on a lab GPU with IndexTTS-2
 ## What it does
 
 - **Speaks text** in a voice through `POST /v1/audio/speech`, the page, or MCP.
+- **Transcribes a recording** through `POST /v1/audio/transcriptions`, and with the text it should say, scores the reading and lists the characters read differently.
 - **Clones a member's own voice** from a consent recording and a sample of up to 60 seconds, recorded in the browser or sent to `/v1/audio/voice_consents` and `/v1/audio/voices`. Each member has one voice, named after their lab account; recording again replaces it.
 - **Checks consent**: Whisper must hear the fixed consent sentence, and a speaker model must find the sample and the consent recording to be the same person.
 - **Keeps a voice private** until its owner shares it with every member; the owner can delete it, and its recordings go with it.
@@ -66,6 +67,19 @@ curl https://tts.winlab.tw/v1/audio/voice_consents -H "Authorization: Bearer $TT
 curl https://tts.winlab.tw/v1/audio/voices -H "Authorization: Bearer $TTS_API_KEY" \
   -F audio_sample=@sample.wav -F consent=cons_… -F shared=true
 ```
+
+Check generated speech with Whisper. `expected` is a WinLab extension: the text the recording should say.
+
+```bash
+curl https://tts.winlab.tw/v1/audio/transcriptions -H "Authorization: Bearer $TTS_API_KEY" \
+  -F file=@speech.mp3 -F language=zh -F expected="著急的時候，差一點就忘了。"
+# {"text":"這急的時候，差一點就忘了。","expected_score":0.909,
+#  "differences":[{"expected":"著","heard":"這","reading":"zhao -> zhe"}]}
+```
+
+- `response_format`: `json` (default), `text` or `verbose_json` (adds `language` and `duration`).
+- `expected_score` compares pinyin without tones for Chinese, so a homophone Whisper writes differently still matches; `reading` shows the readings compared. A misread that only changes the tone is not caught.
+- A recording up to 10 MB and 10 minutes. `model` is accepted and ignored: it is Whisper large-v3.
 
 A `name` is ignored: the voice takes your name. `shared=true` lets every member speak in it. `GET /v1/audio/voices` lists the voices you can use; `DELETE /v1/audio/voices/<id>` deletes yours.
 
@@ -112,6 +126,7 @@ See `.env.example`. `WORKER_TOKEN` must match on both sides. `TTS_ADMINS` lists 
 - One worker serves one job at a time; a busy queue answers `429` past 3 waiting requests per member.
 - No streaming: the audio comes back whole.
 - Audio links and results are kept for 24 hours.
+- A recording sent for transcription is deleted once heard, and its transcript once the answer is sent; neither stays more than 10 minutes.
 
 ## Develop
 

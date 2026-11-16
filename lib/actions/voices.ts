@@ -47,14 +47,14 @@ const AUDIO_TYPES = [
   "video/mp4",
 ]
 
-const audio = z.custom<Buffer>(
+export const audio = z.custom<Buffer>(
   (value) =>
     Buffer.isBuffer(value) &&
     value.length > 0 &&
     value.length <= MAX_AUDIO_BYTES,
   "錄音要小於 10 MB"
 )
-const mime = z
+export const mime = z
   .string()
   .transform((value) => value.split(";")[0].trim().toLowerCase())
   .refine((value) => AUDIO_TYPES.includes(value), "不支援這種音檔格式")

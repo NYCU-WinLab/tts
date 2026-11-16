@@ -104,13 +104,16 @@ export const job = pgTable(
   "jobs",
   {
     id: uuid().primaryKey().defaultRandom(),
-    /** speech, consent (check the sentence) or voice (compare the speakers). */
+    /** speech, transcription, consent (check the sentence) or voice
+     * (compare the speakers). */
     kind: text().notNull(),
     userId: uuid()
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     /** What the worker needs, e.g. { input, voiceId, format, speed }. */
     params: jsonb().$type<Record<string, unknown>>().notNull(),
+    /** For transcription: the recording, dropped once the worker is done. */
+    input: bytea(),
     /** For speech: characters, counted as usage. */
     chars: integer().notNull().default(0),
     /** api, web or mcp. */
