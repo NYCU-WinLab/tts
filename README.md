@@ -74,7 +74,7 @@ Check generated speech with Whisper. `expected` is a WinLab extension: the text 
 curl https://tts.winlab.tw/v1/audio/transcriptions -H "Authorization: Bearer $TTS_API_KEY" \
   -F file=@speech.mp3 -F language=zh -F expected="著急的時候，差一點就忘了。"
 # {"text":"這急的時候，差一點就忘了。","expected_score":0.909,
-#  "differences":[{"expected":"著","heard":"這","reading":"zhu -> zhe"}]}
+#  "differences":[{"expected":"著","heard":"這","reading":"zhao -> zhe"}]}
 ```
 
 - `response_format`: `json` (default), `text` or `verbose_json` (adds `language` and `duration`).

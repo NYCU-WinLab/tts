@@ -185,7 +185,13 @@ def reading(text, language):
     for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+", text):
         if "\u4e00" <= run[0] <= "\u9fff" and language == "zh":
             from pypinyin import Style, pinyin
-            for ch, (py,) in zip(run, pinyin(run, style=Style.NORMAL)):
+            from zhconv import convert
+            # pypinyin knows phrases in simplified Chinese: read in traditional, 著急 comes
+            # out zhu ji and 還原 hai yuan. The simplified form keeps one character per
+            # character; if a conversion ever changes the length, read the original.
+            simple = convert(run, "zh-cn")
+            for ch, (py,) in zip(run, pinyin(simple if len(simple) == len(run) else run,
+                                               style=Style.NORMAL)):
                 pairs.append((py, ch))
         elif "\u4e00" <= run[0] <= "\u9fff":
             pairs.extend((ch, ch) for ch in run)
