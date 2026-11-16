@@ -9,6 +9,15 @@ import { emitErrorLog } from "@/lib/otel"
 // stops @vercel/otel from also starting its own protobuf exporter from the
 // same env, which would send every span twice.
 export async function register() {
+  // Transcription recordings and transcripts expire every minute, even while
+  // the worker is offline and nobody sends a request.
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.DATABASE_URL) {
+    const { sweepTranscriptions } = await import("@/lib/actions/jobs")
+    setInterval(
+      () => void sweepTranscriptions().catch(() => {}),
+      60_000
+    ).unref()
+  }
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(/\/+$/, "")
   if (!endpoint) return
   const headers = Object.fromEntries(

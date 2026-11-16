@@ -103,6 +103,7 @@ export async function waitFor(id: string, timeoutMs: number) {
           status: "failed",
           error: "timeout",
           input: null,
+          params: sql`${job.params} - 'expected'`,
           finishedAt: new Date(),
         })
         .where(
@@ -273,8 +274,9 @@ export async function finishJob(id: string, report: JobReport) {
 
   if (report.kind === "transcription") {
     // The recording goes as soon as it is heard; the transcript stays as
-    // the result for the request waiting on it.
-    await db
+    // the result for the request waiting on it. Only a job still running
+    // takes it: one that timed out or expired meanwhile stays cleared.
+    const taken = await db
       .update(job)
       .set({
         status: "done",
@@ -284,8 +286,9 @@ export async function finishJob(id: string, report: JobReport) {
         seconds: report.result.duration,
         finishedAt,
       })
-      .where(eq(job.id, id))
-    return true
+      .where(and(eq(job.id, id), eq(job.status, "running")))
+      .returning({ id: job.id })
+    return taken.length > 0
   }
 
   await db.transaction(async (tx) => {
