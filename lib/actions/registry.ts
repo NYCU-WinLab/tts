@@ -6,6 +6,7 @@ import {
   myUsage,
   speak,
 } from "@/lib/actions/speech"
+import { transcribe } from "@/lib/actions/transcription"
 import { whoami } from "@/lib/actions/users"
 import {
   createVoice,
@@ -21,6 +22,7 @@ export const actions: Action[] = [
   whoami,
   listVoices,
   speak,
+  transcribe,
   listSpeeches,
   deleteSpeech,
   shareVoice,

@@ -5,6 +5,9 @@
 # Jobs:
 #   speech   IndexTTS-2 speaks params.input in voice params.voiceId, then ffmpeg sets the
 #            speed and the format. Posted back as audio bytes.
+#   transcription  faster-whisper transcribes the recording sent with the job. With
+#            params.expected it also scores the reading against that text and lists the
+#            stretches that differ, to catch a misread character in generated speech.
 #   consent  faster-whisper transcribes the consent recording; it passes when the words
 #            match params.sentence closely enough.
 #   voice    an ECAPA speaker model compares the sample with the consent recording; it
@@ -161,23 +164,83 @@ def negated(sentence, heard, language):
     return bool((said - want) & NEGATIONS["en"])
 
 
+def load_whisper():
+    global whisper
+    if whisper is None:
+        from faster_whisper import WhisperModel
+        whisper = WhisperModel("large-v3", device="cuda", compute_type="int8_float16",
+                               download_root=os.path.join(CACHE, "whisper"))
+    return whisper
+
+
+TRANSCRIBE_MAX_S = 600
+
+
+def reading(text, language):
+    """The text as (token, source) pairs: one per Chinese character, read as pinyin with its
+    tone from the words around it, and one per word of other scripts."""
+    pairs = []
+    for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+", text):
+        if "\u4e00" <= run[0] <= "\u9fff" and language == "zh":
+            from pypinyin import Style, pinyin
+            for ch, (py,) in zip(run, pinyin(run, style=Style.TONE3, neutral_tone_with_five=True)):
+                pairs.append((py, ch))
+        elif "\u4e00" <= run[0] <= "\u9fff":
+            pairs.extend((ch, ch) for ch in run)
+        else:
+            pairs.append((run.lower(), run))
+    return pairs
+
+
+def compare(expected, heard, language):
+    """How closely heard reads like expected, 0 to 1, and the stretches that differ."""
+    want, got = reading(expected, language), reading(heard, language)
+    m = difflib.SequenceMatcher(None, [t for t, _ in want], [t for t, _ in got], autojunk=False)
+    diffs = []
+    for op, a1, a2, b1, b2 in m.get_opcodes():
+        if op == "equal":
+            continue
+        diffs.append({"expected": "".join(s for _, s in want[a1:a2]),
+                      "heard": "".join(s for _, s in got[b1:b2]),
+                      "reading": " ".join(t for t, _ in want[a1:a2]) + " -> " +
+                                 " ".join(t for t, _ in got[b1:b2])})
+    return round(m.ratio() if want else 0, 3), diffs
+
+
+def transcription(job):
+    p = job["params"]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = fetch_wav("job", job["id"], 16000, tmp)
+        seconds = duration(path)
+        if seconds > TRANSCRIBE_MAX_S:
+            raise RuntimeError(f"recording longer than {TRANSCRIBE_MAX_S} s")
+        language = p.get("language")
+        segments, info = load_whisper().transcribe(
+            path, language=language, beam_size=5,
+            initial_prompt="以下是繁體中文。" if language in (None, "zh") else None)
+        text = "".join(s.text for s in segments).strip()
+        language = language or info.language
+        result = {"text": text, "language": language, "duration": round(seconds, 2)}
+        if p.get("expected"):
+            score, diffs = compare(p["expected"], text, language)
+            result.update(expected_score=score, differences=diffs)
+        report(job["id"], {"kind": "transcription", "result": result})
+        log(f"transcription {job['id']} {seconds:.1f}s audio" +
+            (f" score {result['expected_score']:.2f}" if p.get("expected") else ""))
+
+
 def consent(job):
     with tempfile.TemporaryDirectory() as tmp:
         check_consent(job, tmp)
 
 
 def check_consent(job, tmp):
-    global whisper
     p = job["params"]
     path = fetch_wav("consent", p["consentId"], 16000, tmp)
     if duration(path) > 30:
         return report(job["id"], {"kind": "consent", "ok": False, "transcript": "", "score": 0,
                                   "reason": "同意錄音超過 30 秒"})
-    if whisper is None:
-        from faster_whisper import WhisperModel
-        whisper = WhisperModel("large-v3", device="cuda", compute_type="int8_float16",
-                               download_root=os.path.join(CACHE, "whisper"))
-    segments, _ = whisper.transcribe(path, language=p["language"], beam_size=5,
+    segments, _ = load_whisper().transcribe(path, language=p["language"], beam_size=5,
                                      initial_prompt="以下是繁體中文。" if p["language"] == "zh" else None)
     heard = "".join(s.text for s in segments).strip()
     want, got = normalize(p["sentence"], p["language"]), normalize(heard, p["language"])
@@ -228,7 +291,7 @@ def check_voice(job, tmp):
     log(f"voice {p['voiceId']} similarity {same:.2f} ok={ok}")
 
 
-HANDLERS = {"speech": speech, "consent": consent, "voice": voice}
+HANDLERS = {"speech": speech, "transcription": transcription, "consent": consent, "voice": voice}
 
 
 def main():

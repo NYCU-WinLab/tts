@@ -10,7 +10,7 @@ import { and, eq, lt, ne, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { job, voice, voiceConsent } from "@/lib/db/schema"
 
-export type JobKind = "speech" | "consent" | "voice"
+export type JobKind = "speech" | "transcription" | "consent" | "voice"
 
 /** A job the worker has not reported on in this long went with a crash. */
 const RUNNING_TIMEOUT_MS = 5 * 60 * 1000
@@ -54,6 +54,7 @@ export async function enqueue(
     chars?: number
     via: string
     linkSecret?: string
+    input?: Buffer
   },
   maxPending?: number
 ) {
@@ -98,7 +99,12 @@ export async function waitFor(id: string, timeoutMs: number) {
       // and reject the consent or voice it was checking.
       const dropped = await db
         .update(job)
-        .set({ status: "failed", error: "timeout", finishedAt: new Date() })
+        .set({
+          status: "failed",
+          error: "timeout",
+          input: null,
+          finishedAt: new Date(),
+        })
         .where(and(eq(job.id, id), eq(job.status, "queued")))
         .returning({ kind: job.kind, params: job.params })
       for (const { kind, params } of dropped) {
@@ -173,7 +179,19 @@ export type JobReport =
       embedding?: number[]
       reason?: string
     }
+  | { kind: "transcription"; result: Transcript }
   | { kind: "error"; error: string }
+
+/** What the worker heard in a recording. With expected text it also scores
+ * how closely the reading matches it (pinyin with tones for Chinese) and
+ * lists the stretches that differ. */
+export type Transcript = {
+  text: string
+  language: string
+  duration: number
+  expected_score?: number
+  differences?: { expected: string; heard: string; reading: string }[]
+}
 
 export async function finishJob(id: string, report: JobReport) {
   const [row] = await db
@@ -186,7 +204,12 @@ export async function finishJob(id: string, report: JobReport) {
   if (report.kind === "error") {
     await db
       .update(job)
-      .set({ status: "failed", error: report.error.slice(0, 500), finishedAt })
+      .set({
+        status: "failed",
+        error: report.error.slice(0, 500),
+        input: null,
+        finishedAt,
+      })
       .where(eq(job.id, id))
     // A check that failed to run leaves its consent or voice rejected.
     if (row.kind === "consent")
@@ -202,6 +225,23 @@ export async function finishJob(id: string, report: JobReport) {
     return true
   }
   if (report.kind !== row.kind) return false
+
+  if (report.kind === "transcription") {
+    // The recording goes as soon as it is heard; the transcript stays as
+    // the result for the request waiting on it.
+    await db
+      .update(job)
+      .set({
+        status: "done",
+        input: null,
+        result: Buffer.from(JSON.stringify(report.result)),
+        resultMime: "application/json",
+        seconds: report.result.duration,
+        finishedAt,
+      })
+      .where(eq(job.id, id))
+    return true
+  }
 
   await db.transaction(async (tx) => {
     if (report.kind === "speech") {
@@ -355,8 +395,30 @@ async function copiedVoice(voiceId: string, embedding: number[]) {
   return null
 }
 
-/** Audio the worker needs: a voice's sample or a consent recording. */
-export async function workerAudio(kind: "voice" | "consent", id: string) {
+/** Audio the worker needs: a voice's sample, a consent recording, or the
+ * recording of a transcription job it is running. */
+export async function workerAudio(
+  kind: "voice" | "consent" | "job",
+  id: string
+) {
+  if (kind === "job") {
+    const [row] = await db
+      .select({ audio: job.input, params: job.params })
+      .from(job)
+      .where(
+        and(
+          eq(job.id, id),
+          eq(job.kind, "transcription"),
+          eq(job.status, "running")
+        )
+      )
+    return row?.audio
+      ? {
+          audio: row.audio,
+          mime: String(row.params.mime ?? "application/octet-stream"),
+        }
+      : null
+  }
   if (kind === "voice") {
     const [row] = await db
       .select({ audio: voice.sample, mime: voice.mime })
