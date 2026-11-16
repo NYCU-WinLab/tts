@@ -74,11 +74,11 @@ Check generated speech with Whisper. `expected` is a WinLab extension: the text 
 curl https://tts.winlab.tw/v1/audio/transcriptions -H "Authorization: Bearer $TTS_API_KEY" \
   -F file=@speech.mp3 -F language=zh -F expected="著急的時候，差一點就忘了。"
 # {"text":"這急的時候，差一點就忘了。","expected_score":0.909,
-#  "differences":[{"expected":"著","heard":"這","reading":"zhu4 -> zhe4"}]}
+#  "differences":[{"expected":"著","heard":"這","reading":"zhu -> zhe"}]}
 ```
 
 - `response_format`: `json` (default), `text` or `verbose_json` (adds `language` and `duration`).
-- `expected_score` compares pinyin with tones for Chinese, so a homophone Whisper writes differently still matches; `reading` shows the readings compared.
+- `expected_score` compares pinyin without tones for Chinese, so a homophone Whisper writes differently still matches; `reading` shows the readings compared. A misread that only changes the tone is not caught.
 - A recording up to 10 MB and 10 minutes. `model` is accepted and ignored: it is Whisper large-v3.
 
 A `name` is ignored: the voice takes your name. `shared=true` lets every member speak in it. `GET /v1/audio/voices` lists the voices you can use; `DELETE /v1/audio/voices/<id>` deletes yours.

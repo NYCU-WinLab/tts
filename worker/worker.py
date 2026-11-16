@@ -6,7 +6,7 @@
 #   speech   IndexTTS-2 speaks params.input in voice params.voiceId, then ffmpeg sets the
 #            speed and the format. Posted back as audio bytes.
 #   transcription  faster-whisper transcribes the recording sent with the job. With
-#            params.expected it also scores the reading against that text and lists the
+#            params.expected it also scores the reading (pinyin without tones) against that text and lists the
 #            stretches that differ, to catch a misread character in generated speech.
 #   consent  faster-whisper transcribes the consent recording; it passes when the words
 #            match params.sentence closely enough.
@@ -177,13 +177,15 @@ TRANSCRIBE_MAX_S = 600
 
 
 def reading(text, language):
-    """The text as (token, source) pairs: one per Chinese character, read as pinyin with its
-    tone from the words around it, and one per word of other scripts."""
+    """The text as (token, source) pairs: one per Chinese character, read as pinyin from the
+    words around it, and one per word of other scripts. Tones are left out: pypinyin guesses
+    them less well than the syllable, and a misread character almost always changes the
+    syllable (著 zhe, zhao; 差 cha, chai)."""
     pairs = []
     for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+", text):
         if "\u4e00" <= run[0] <= "\u9fff" and language == "zh":
             from pypinyin import Style, pinyin
-            for ch, (py,) in zip(run, pinyin(run, style=Style.TONE3, neutral_tone_with_five=True)):
+            for ch, (py,) in zip(run, pinyin(run, style=Style.NORMAL)):
                 pairs.append((py, ch))
         elif "\u4e00" <= run[0] <= "\u9fff":
             pairs.extend((ch, ch) for ch in run)

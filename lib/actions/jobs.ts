@@ -228,7 +228,7 @@ export type JobReport =
   | { kind: "error"; error: string }
 
 /** What the worker heard in a recording. With expected text it also scores
- * how closely the reading matches it (pinyin with tones for Chinese) and
+ * how closely the reading matches it (pinyin without tones for Chinese) and
  * lists the stretches that differ. */
 export type Transcript = {
   text: string

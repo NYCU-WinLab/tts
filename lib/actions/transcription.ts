@@ -27,7 +27,7 @@ export const transcribe = defineAction({
   name: "transcribe",
   title: "語音轉文字",
   description:
-    "Transcribes a recording (10 MB at most) with Whisper on the lab GPU. With expected, the text the recording should say, it also returns expected_score (0 to 1; pinyin with tones for Chinese) and the differences, so a mispronounced character in generated speech shows up.",
+    "Transcribes a recording (10 MB at most) with Whisper on the lab GPU. With expected, the text the recording should say, it also returns expected_score (0 to 1; pinyin without tones for Chinese) and the differences, so a mispronounced character in generated speech shows up.",
   kind: "mutation",
   input: z.object({
     recording: audio,
