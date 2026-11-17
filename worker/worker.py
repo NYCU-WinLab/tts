@@ -178,11 +178,13 @@ TRANSCRIBE_MAX_S = 600
 
 def reading(text, language):
     """The text as (token, source) pairs: one per Chinese character, read as pinyin from the
-    words around it, and one per word of other scripts. Tones are left out: pypinyin guesses
+    words around it, and one per run of other scripts. Words in a run join without spaces or
+    case, since speech has neither: "Win Lab" heard as "Winlab" is the same reading. Tones are
+    left out: pypinyin guesses
     them less well than the syllable, and a misread character almost always changes the
     syllable (著 zhe, zhao; 差 cha, chai)."""
     pairs = []
-    for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+", text):
+    for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+(?:\s+[A-Za-z0-9']+)*", text):
         if "\u4e00" <= run[0] <= "\u9fff" and language == "zh":
             from pypinyin import Style, pinyin
             from zhconv import convert
@@ -196,7 +198,7 @@ def reading(text, language):
         elif "\u4e00" <= run[0] <= "\u9fff":
             pairs.extend((ch, ch) for ch in run)
         else:
-            pairs.append((run.lower(), run))
+            pairs.append((re.sub(r"\s+", "", run).lower(), run))
     return pairs
 
 
