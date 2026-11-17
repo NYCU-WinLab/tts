@@ -176,6 +176,38 @@ def load_whisper():
 TRANSCRIBE_MAX_S = 600
 
 
+DIGITS = "零一二三四五六七八九"
+
+
+def spoken_number(run):
+    """A number written in digits, as it is read in Chinese: 3 三, 16 十六, 256 二百五十六,
+    1.5 一點五. Long runs such as years or phone numbers are read digit by digit."""
+    whole, _, frac = run.partition(".")
+    n = int(whole)
+    if len(whole) > 8 or (len(whole) > 1 and whole[0] == "0"):
+        out = "".join(DIGITS[int(d)] for d in whole)
+    elif n == 0:
+        out = "零"
+    else:
+        out, zero = "", False
+        for unit_big, chunk in (("億", n // 10**8), ("萬", n // 10**4 % 10**4), ("", n % 10**4)):
+            if not chunk:
+                zero = bool(out)
+                continue
+            part, z = "", zero
+            for unit, d in (("千", chunk // 1000), ("百", chunk // 100 % 10), ("十", chunk // 10 % 10), ("", chunk % 10)):
+                if d:
+                    part += ("零" if z and (part or out) else "") + DIGITS[d] + unit
+                    z = False
+                else:
+                    z = True
+            out += part + unit_big
+            zero = chunk % 10 == 0
+        if out.startswith("一十"):
+            out = out[1:]
+    return out + ("點" + "".join(DIGITS[int(d)] for d in frac) if frac else "")
+
+
 def reading(text, language):
     """The text as (token, source) pairs: one per Chinese character, read as pinyin from the
     words around it, and one per run of other scripts. Words in a run join without spaces or
@@ -184,7 +216,7 @@ def reading(text, language):
     them less well than the syllable, and a misread character almost always changes the
     syllable (著 zhe, zhao; 差 cha, chai)."""
     pairs = []
-    for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+(?:\s+[A-Za-z0-9']+)*", text):
+    for run in re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9']+(?:[\s.-]+[A-Za-z0-9']+)*", text):
         if "\u4e00" <= run[0] <= "\u9fff" and language == "zh":
             from pypinyin import Style, pinyin
             from zhconv import convert
@@ -194,9 +226,19 @@ def reading(text, language):
             simple = convert(run, "zh-cn")
             for ch, (py,) in zip(run, pinyin(simple if len(simple) == len(run) else run,
                                                style=Style.NORMAL)):
-                pairs.append((py, ch))
+                pairs.append(("er" if py == "liang" and ch == "兩" else py, ch))
         elif "\u4e00" <= run[0] <= "\u9fff":
             pairs.extend((ch, ch) for ch in run)
+        elif language == "zh":
+            # A number reads the same written or heard as digits or as characters: 3 種 and
+            # 三種, AES-256 and AES256. 兩 counts as 二, since speech uses either.
+            from pypinyin import Style, pinyin
+            for i, piece in enumerate(re.findall(r"\d+(?:\.\d+)?|[^\d]+", re.sub(r"[\s.-]+", "", run).lower())):
+                if piece[0].isdigit():
+                    for j, (py,) in enumerate(pinyin(spoken_number(piece), style=Style.NORMAL)):
+                        pairs.append(("er" if py == "liang" else py, piece if j == 0 else ""))
+                else:
+                    pairs.append((piece, piece))
         else:
             pairs.append((re.sub(r"\s+", "", run).lower(), run))
     return pairs
