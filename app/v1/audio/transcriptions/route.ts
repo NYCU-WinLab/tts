@@ -8,7 +8,9 @@ export const runtime = "nodejs"
 // response_format), as OpenAI. model is accepted and ignored: it is Whisper
 // large-v3. response_format is json (default), text or verbose_json.
 // Extension: expected, the text the recording should say, adds
-// expected_score and differences to the JSON.
+// expected_score and differences to the JSON. verbose_json carries segments
+// with start and end seconds, and words too when timestamp_granularities[]
+// includes word.
 export async function POST(request: Request) {
   return withApiKey(request, async (actor) => {
     const form = await request.formData().catch(() => null)
@@ -46,6 +48,10 @@ export async function POST(request: Request) {
         language: result.language,
         duration: result.duration,
         text: result.text,
+        segments: (result.segments ?? []).map((s, id) => ({ id, ...s })),
+        ...(form.getAll("timestamp_granularities[]").includes("word") && {
+          words: result.words ?? [],
+        }),
         ...extra,
       })
     return Response.json({ text: result.text, ...extra })

@@ -77,7 +77,7 @@ curl https://tts.winlab.tw/v1/audio/transcriptions -H "Authorization: Bearer $TT
 #  "differences":[{"expected":"著","heard":"這","reading":"zhao -> zhe"}]}
 ```
 
-- `response_format`: `json` (default), `text` or `verbose_json` (adds `language` and `duration`).
+- `response_format`: `json` (default), `text` or `verbose_json` (adds `language`, `duration` and `segments` with start and end seconds; send `timestamp_granularities[]=word` for `words` as well).
 - `expected_score` compares pinyin without tones for Chinese, so a homophone Whisper writes differently still matches; `reading` shows the readings compared. A misread that only changes the tone is not caught.
 - A recording up to 10 MB and 10 minutes. `model` is accepted and ignored: it is Whisper large-v3.
 
