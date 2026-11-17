@@ -235,6 +235,9 @@ export type Transcript = {
   text: string
   language: string
   duration: number
+  /** Timed stretches of speech, in seconds; workers before 2026-11-17 send none. */
+  segments?: { start: number; end: number; text: string }[]
+  words?: { word: string; start: number; end: number }[]
   expected_score?: number
   differences?: { expected: string; heard: string; reading: string }[]
 }

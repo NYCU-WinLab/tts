@@ -225,11 +225,18 @@ def transcription(job):
             raise RuntimeError(f"recording longer than {TRANSCRIBE_MAX_S} s")
         language = p.get("language")
         segments, info = load_whisper().transcribe(
-            path, language=language, beam_size=5,
+            path, language=language, beam_size=5, word_timestamps=True,
             initial_prompt="以下是繁體中文。" if language in (None, "zh") else None)
+        segments = list(segments)
         text = "".join(s.text for s in segments).strip()
         language = language or info.language
-        result = {"text": text, "language": language, "duration": round(seconds, 2)}
+        result = {
+            "text": text, "language": language, "duration": round(seconds, 2),
+            "segments": [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()}
+                         for s in segments],
+            "words": [{"word": w.word.strip(), "start": round(w.start, 2), "end": round(w.end, 2)}
+                      for s in segments for w in (s.words or [])],
+        }
         if p.get("expected"):
             score, diffs = compare(p["expected"], text, language)
             result.update(expected_score=score, differences=diffs)
