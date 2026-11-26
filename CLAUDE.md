@@ -15,7 +15,7 @@ Text to speech with cloned voices at tts.winlab.tw: a Next.js app with its own P
 - **The worker only calls out.** It sits behind NAT, long-polls `/api/worker/next` with `WORKER_TOKEN`, fetches recordings from `/api/worker/audio/...` and posts results to `/api/worker/jobs/<id>`. The queue is the `jobs` table (`lib/actions/jobs.ts`); callers wait on the row.
 - **Consent before cloning.** A member's voice needs a verified consent recording (the fixed sentence in `CONSENT_SENTENCES`, checked by Whisper) and a sample of the same speaker (checked by ECAPA). Each member has one voice, named after them. An admin (`TTS_ADMINS`) may add a member's voice with a consent note saying how the speaker agreed (`owner` in `create_voice`); it belongs to that member.
 - **Schema**: edit `lib/db/*.ts`, run `bun run db:generate`, commit the SQL in `drizzle/`. Tables are snake_case plurals; the Better Auth tables keep its model names as export keys.
-- **Members only.** Every page calls `requireActor`. The open routes are sign-in, `/v1` (API key), `/api/worker` (worker token), `/mcp` (OAuth) and `/a/<job>/<secret>.<ext>`, the 24-hour audio link `speak` returns.
+- **Members only.** Every page calls `requireActor`. The open routes are sign-in, `/v1` (API key), `/api/worker` (worker token), `/mcp` (Keycloak access token for `tts-mcp`) and `/a/<job>/<secret>.<ext>`, the 24-hour audio link `speak` returns.
 - **Observability**: actions run in a span (`action <name>`, with `via` web, api or mcp); send ids and counts, never the text or the audio.
 
 ## Verify
