@@ -12,7 +12,7 @@ import { account } from "@/lib/db/schema"
 const issuer = () => process.env.KEYCLOAK_ISSUER!
 // Only tokens this client asked for: another client given the same
 // audience scope by mistake still cannot act for members here.
-const mcpClient = () => process.env.KEYCLOAK_MCP_CLIENT_ID ?? "tts-mcp"
+const mcpClient = () => process.env.KEYCLOAK_MCP_CLIENT_ID?.trim() || "tts-mcp"
 let keys: ReturnType<typeof createRemoteJWKSet> | null = null
 const jwks = () =>
   (keys ??= createRemoteJWKSet(
@@ -49,9 +49,12 @@ export async function verifyKeycloakToken(
   } catch (error) {
     // Keycloak's keys out of reach is an outage, not a bad token: a 401
     // would send every client back to sign in again.
+    // jose throws a bare JOSEError when the key set answers non-200.
     if (
       !(error instanceof errors.JOSEError) ||
-      error instanceof errors.JWKSTimeout
+      error.constructor === errors.JOSEError ||
+      error instanceof errors.JWKSTimeout ||
+      error instanceof errors.JWKSInvalid
     )
       throw new TokenRefused(503, "cannot reach Keycloak to check the token")
     throw new TokenRefused(401, "invalid token")
