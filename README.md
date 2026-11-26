@@ -85,7 +85,13 @@ A `name` is ignored: the voice takes your name. `shared=true` lets every member 
 
 ## MCP
 
-`https://tts.winlab.tw/mcp`, with OAuth sign-in through the lab account. Tools: `whoami`, `list_voices`, `speak` (returns a link that works for 24 hours), `list_speeches`, `delete_speech`, `share_voice`, `delete_voice`, `list_voice_consents`, `my_usage`, `list_api_keys`, `revoke_api_key`.
+`https://tts.winlab.tw/mcp`. Sign in through the lab Keycloak with the public client `tts-mcp`; Keycloak's registration is closed, so the client id has to be given. Sign in on the website once first, so your account exists here.
+
+```sh
+claude mcp add --transport http tts https://tts.winlab.tw/mcp --client-id tts-mcp --callback-port 3118
+```
+
+Tools: `whoami`, `list_voices`, `speak` (returns a link that works for 24 hours), `list_speeches`, `delete_speech`, `share_voice`, `delete_voice`, `list_voice_consents`, `my_usage`, `list_api_keys`, `revoke_api_key`.
 
 ## How it works
 
